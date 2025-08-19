@@ -1,0 +1,72 @@
+# CBB Betting ML System Configuration
+# Copy this file to config_local.yaml and fill in your actual credentials
+
+# Database Configuration
+database:
+  host: localhost
+  port: 5432
+  name: cbb_betting
+  user: your_username
+  password: your_password
+  schema: public
+
+# API Keys and Endpoints
+apis:
+  # Sports Reference (NCAA data)
+  sports_reference:
+    base_url: "https://www.sports-reference.com/cbb"
+    rate_limit_delay: 1.0  # seconds between requests
+  
+  # Pinnacle Sports (odds data)
+  pinnacle:
+    base_url: "https://www.pinnacle.com"
+    api_key: your_pinnacle_api_key
+    rate_limit_delay: 0.5
+  
+  # DraftKings (odds data)
+  draftkings:
+    base_url: "https://sportsbook.draftkings.com"
+    rate_limit_delay: 1.0
+
+# Data Collection Settings
+data_collection:
+  # NCAA seasons to collect (inclusive)
+  start_season: 2020
+  end_season: 2024
+  
+  # Odds collection settings
+  odds:
+    days_back: 30  # How many days back to collect odds
+    update_frequency_hours: 6  # How often to update odds
+  
+  # File paths
+  raw_data_dir: "data/raw"
+  processed_data_dir: "data/processed"
+  backup_dir: "data/backup"
+
+# Logging Configuration
+logging:
+  level: INFO
+  file: "logs/cbb_model.log"
+  max_file_size_mb: 10
+  backup_count: 5
+
+# Feature Engineering (Phase 2)
+features:
+  # Rolling averages window sizes
+  rolling_windows: [3, 5, 10, 20]
+  
+  # Advanced stats to calculate
+  advanced_stats:
+    - pace
+    - efficiency
+    - strength_of_schedule
+    - rest_days
+    - travel_distance
+
+# Model Training (Phase 3)
+model:
+  test_size: 0.2
+  validation_size: 0.1
+  random_state: 42
+  cross_validation_folds: 5

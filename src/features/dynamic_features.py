@@ -1,442 +1,348 @@
 """
-Dynamic Feature Engineering for CBB Betting ML System.
+Dynamic Features for NCAA CBB Betting ML System.
 
-This module handles dynamic features derived from game flow and play-by-play data:
-- Momentum index calculations
-- Run-length encoding for streaks
-- Game flow indicators
-- Possession-based metrics
-- Time-based features
+This module handles dynamic situational feature engineering including:
+- Travel distance and fatigue
+- Rest days and back-to-back indicators
+- Altitude adjustments
+- Game timing and situational factors
 """
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Any, Optional, Tuple
+from sqlalchemy import create_engine
 from datetime import datetime, timedelta
-import logging
-
-from ..utils import get_logger, ConfigManager
 
 
-class DynamicFeatureEngineer:
-    """Engineers dynamic features from game flow and play-by-play data."""
+class DynamicFeatures:
+    """Engineers dynamic situational features for CBB betting analysis."""
     
-    def __init__(self, config: ConfigManager):
+    def __init__(self, db_engine):
         """Initialize the dynamic feature engineer.
         
         Args:
-            config: Configuration manager instance
+            db_engine: SQLAlchemy database engine
         """
-        self.config = config
-        self.logger = get_logger('dynamic_features')
-        
-        # Get feature configuration
-        self.momentum_alpha = self.config.get('features.momentum.alpha', 0.7)
-        self.momentum_beta = self.config.get('features.momentum.beta', 0.3)
-        self.rolling_windows = self.config.get('features.rolling_windows', [3, 5, 10, 20])
+        self.engine = db_engine
     
-    def compute_game_flow(self, pbp_df: pd.DataFrame) -> pd.DataFrame:
-        """Compute game flow features from play-by-play data.
+    def transform(self, games_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Dynamic situational features:
+        - Travel distance
+        - Rest days
+        - Back-to-back indicator
+        - Altitude adjustment
         
         Args:
-            pbp_df: DataFrame with play-by-play data
+            games_df: DataFrame with games data
             
         Returns:
-            DataFrame with game flow features
+            DataFrame with dynamic features prefixed with 'dynamic_'
         """
-        if pbp_df.empty:
-            self.logger.warning("Empty play-by-play DataFrame provided")
+        if games_df.empty:
             return pd.DataFrame()
         
-        self.logger.info("Computing game flow features...")
-        
         # Create a copy to avoid modifying original
-        features_df = pbp_df.copy()
+        features_df = games_df.copy()
         
-        # Basic play-by-play features
-        features_df = self._add_basic_pbp_features(features_df)
+        # Add travel and distance features
+        features_df = self._add_travel_features(features_df)
         
-        # Momentum index features
+        # Add rest and fatigue features
+        features_df = self._add_rest_features(features_df)
+        
+        # Add altitude features
+        features_df = self._add_altitude_features(features_df)
+        
+        # Add timing features
+        features_df = self._add_timing_features(features_df)
+        
+        # Add situational features
+        features_df = self._add_situational_features(features_df)
+        
+        # Add momentum features
         features_df = self._add_momentum_features(features_df)
         
-        # Run-length encoding for streaks
-        features_df = self._add_streak_features(features_df)
-        
-        # Possession-based features
-        features_df = self._add_possession_features(features_df)
-        
-        # Time-based features
-        features_df = self._add_time_features(features_df)
-        
-        # Rolling game flow features
-        features_df = self._add_rolling_flow_features(features_df)
-        
-        self.logger.info(f"Game flow features computed: {len(features_df)} rows")
         return features_df
     
-    def _add_basic_pbp_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add basic play-by-play features.
+    def _add_travel_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add travel distance and fatigue features."""
+        # Simulated travel distances (replace with real geocoding data)
+        np.random.seed(42)
         
-        Args:
-            df: Input DataFrame
-            
-        Returns:
-            DataFrame with basic PBP features added
-        """
-        # Ensure required columns exist (add placeholders if missing)
-        required_columns = ['game_id', 'quarter', 'time_remaining', 'home_score', 'away_score']
+        # Home team travel distance (usually minimal)
+        df['dynamic_home_travel_distance'] = np.random.exponential(50, len(df))  # miles
         
-        for col in required_columns:
-            if col not in df.columns:
-                if col == 'quarter':
-                    df[col] = np.random.randint(1, 5, len(df))
-                elif col == 'time_remaining':
-                    df[col] = np.random.randint(0, 1200, len(df))  # seconds
-                elif col == 'home_score':
-                    df[col] = np.random.randint(0, 100, len(df))
-                elif col == 'away_score':
-                    df[col] = np.random.randint(0, 100, len(df))
+        # Away team travel distance (longer distances)
+        df['dynamic_away_travel_distance'] = np.random.exponential(800, len(df))  # miles
         
-        # Score differential at each play
-        df['score_differential'] = df['home_score'] - df['away_score']
+        # Travel distance differential
+        df['dynamic_travel_distance_diff'] = df['dynamic_away_travel_distance'] - df['dynamic_home_travel_distance']
         
-        # Lead change indicator
-        df['lead_change'] = df['score_differential'].diff().abs() > 0
+        # Travel fatigue indicators
+        df['dynamic_home_travel_fatigue'] = (df['dynamic_home_travel_distance'] > 100).astype(int)
+        df['dynamic_away_travel_fatigue'] = (df['dynamic_away_travel_distance'] > 500).astype(int)
         
-        # Quarter progression
-        df['quarter_progression'] = df['quarter'] / 4.0
+        # Travel fatigue differential
+        df['dynamic_travel_fatigue_diff'] = df['dynamic_away_travel_fatigue'] - df['dynamic_home_travel_fatigue']
         
-        # Time pressure (inverse of time remaining)
-        df['time_pressure'] = 1.0 / (df['time_remaining'] + 1)
+        # Long distance travel indicators
+        df['dynamic_home_long_distance'] = (df['dynamic_home_travel_distance'] > 300).astype(int)
+        df['dynamic_away_long_distance'] = (df['dynamic_away_travel_distance'] > 1000).astype(int)
         
-        # Game state indicators
-        df['early_game'] = (df['quarter'] <= 2).astype(int)
-        df['late_game'] = (df['quarter'] >= 3).astype(int)
-        df['final_minutes'] = ((df['quarter'] == 4) & (df['time_remaining'] <= 300)).astype(int)
+        # Long distance differential
+        df['dynamic_long_distance_diff'] = df['dynamic_away_long_distance'] - df['dynamic_home_long_distance']
+        
+        # Travel time estimates (assuming 60 mph average)
+        df['dynamic_home_travel_time'] = df['dynamic_home_travel_distance'] / 60.0  # hours
+        df['dynamic_away_travel_time'] = df['dynamic_away_travel_distance'] / 60.0  # hours
+        
+        # Travel time differential
+        df['dynamic_travel_time_diff'] = df['dynamic_away_travel_time'] - df['dynamic_home_travel_time']
+        
+        # Travel efficiency (distance per day)
+        df['dynamic_home_travel_efficiency'] = df['dynamic_home_travel_distance'] / 1.0  # miles per day
+        df['dynamic_away_travel_efficiency'] = df['dynamic_away_travel_distance'] / 1.0  # miles per day
+        
+        return df
+    
+    def _add_rest_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add rest days and fatigue features."""
+        # Ensure date column is datetime
+        if 'date' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['date']):
+            df['date'] = pd.to_datetime(df['date'])
+        
+        # Sort by team and date for rolling calculations
+        df = df.sort_values(['home_team', 'date'])
+        
+        # Days since last game for home team
+        df['dynamic_home_days_rest'] = df.groupby('home_team')['date'].diff().dt.days
+        
+        # Sort by away team and date
+        df = df.sort_values(['away_team', 'date'])
+        
+        # Days since last game for away team
+        df['dynamic_away_days_rest'] = df.groupby('away_team')['date'].diff().dt.days
+        
+        # Sort back to original order
+        df = df.sort_index()
+        
+        # Rest advantage
+        df['dynamic_rest_advantage'] = df['dynamic_home_days_rest'] - df['dynamic_away_days_rest']
+        
+        # Rest advantage categories
+        df['dynamic_rest_advantage_category'] = pd.cut(
+            df['dynamic_rest_advantage'],
+            bins=[-10, -3, -1, 0, 1, 3, 10],
+            labels=['large_disadvantage', 'disadvantage', 'slight_disadvantage', 'equal', 'slight_advantage', 'advantage', 'large_advantage']
+        )
+        
+        # Back to back indicators
+        df['dynamic_home_back_to_back'] = (df['dynamic_home_days_rest'] == 1).astype(int)
+        df['dynamic_away_back_to_back'] = (df['dynamic_away_days_rest'] == 1).astype(int)
+        
+        # Back to back differential
+        df['dynamic_back_to_back_diff'] = df['dynamic_away_back_to_back'] - df['dynamic_home_back_to_back']
+        
+        # Extended rest indicators
+        df['dynamic_home_extended_rest'] = (df['dynamic_home_days_rest'] >= 5).astype(int)
+        df['dynamic_away_extended_rest'] = (df['dynamic_away_days_rest'] >= 5).astype(int)
+        
+        # Extended rest differential
+        df['dynamic_extended_rest_diff'] = df['dynamic_home_extended_rest'] - df['dynamic_away_extended_rest']
+        
+        # Rest efficiency (rest days vs travel distance)
+        df['dynamic_home_rest_efficiency'] = df['dynamic_home_days_rest'] / (df['dynamic_home_travel_distance'] + 1)
+        df['dynamic_away_rest_efficiency'] = df['dynamic_away_days_rest'] / (df['dynamic_away_travel_distance'] + 1)
+        
+        # Rest efficiency differential
+        df['dynamic_rest_efficiency_diff'] = df['dynamic_home_rest_efficiency'] - df['dynamic_away_rest_efficiency']
+        
+        return df
+    
+    def _add_altitude_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add altitude and elevation features."""
+        # Simulated altitude data (replace with real venue database)
+        np.random.seed(42)
+        
+        # Home venue altitude
+        df['dynamic_home_altitude'] = np.random.normal(1000, 800, len(df))  # feet
+        df['dynamic_away_altitude'] = np.random.normal(1000, 800, len(df))  # feet
+        
+        # Altitude difference
+        df['dynamic_altitude_difference'] = df['dynamic_home_altitude'] - df['dynamic_away_altitude']
+        
+        # High altitude indicators
+        df['dynamic_home_high_altitude'] = (df['dynamic_home_altitude'] > 4000).astype(int)
+        df['dynamic_away_high_altitude'] = (df['dynamic_away_altitude'] > 4000).astype(int)
+        
+        # High altitude differential
+        df['dynamic_high_altitude_diff'] = df['dynamic_home_high_altitude'] - df['dynamic_away_high_altitude']
+        
+        # Altitude adjustment factors
+        df['dynamic_home_altitude_adjustment'] = np.where(
+            df['dynamic_home_altitude'] > 4000,
+            (df['dynamic_home_altitude'] - 4000) / 1000,  # Adjustment factor
+            0
+        )
+        
+        df['dynamic_away_altitude_adjustment'] = np.where(
+            df['dynamic_away_altitude'] > 4000,
+            (df['dynamic_away_altitude'] - 4000) / 1000,  # Adjustment factor
+            0
+        )
+        
+        # Altitude adjustment differential
+        df['dynamic_altitude_adjustment_diff'] = df['dynamic_home_altitude_adjustment'] - df['dynamic_away_altitude_adjustment']
+        
+        # Altitude categories
+        df['dynamic_home_altitude_category'] = pd.cut(
+            df['dynamic_home_altitude'],
+            bins=[0, 1000, 3000, 5000, 8000],
+            labels=['sea_level', 'low', 'moderate', 'high', 'very_high']
+        )
+        
+        df['dynamic_away_altitude_category'] = pd.cut(
+            df['dynamic_away_altitude'],
+            bins=[0, 1000, 3000, 5000, 8000],
+            labels=['sea_level', 'low', 'moderate', 'high', 'very_high']
+        )
+        
+        return df
+    
+    def _add_timing_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add game timing and scheduling features."""
+        # Ensure date column is datetime
+        if 'date' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['date']):
+            df['date'] = pd.to_datetime(df['date'])
+        
+        # Day of week features
+        df['dynamic_game_day_of_week'] = df['date'].dt.dayofweek
+        
+        # Weekend indicators
+        df['dynamic_weekend_game'] = (df['dynamic_game_day_of_week'] >= 5).astype(int)
+        
+        # Day of week categories
+        df['dynamic_day_category'] = pd.cut(
+            df['dynamic_game_day_of_week'],
+            bins=[0, 1, 2, 3, 4, 5, 6],
+            labels=['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        )
+        
+        # Month features
+        df['dynamic_game_month'] = df['date'].dt.month
+        
+        # Season timing indicators
+        df['dynamic_early_season'] = (df['dynamic_game_month'].isin([11, 12])).astype(int)
+        df['dynamic_mid_season'] = (df['dynamic_game_month'].isin([1, 2])).astype(int)
+        df['dynamic_late_season'] = (df['dynamic_game_month'].isin([3, 4])).astype(int)
+        
+        # Conference tournament indicators
+        df['dynamic_conference_tournament'] = (df['dynamic_game_month'] == 3).astype(int)
+        
+        # NCAA tournament indicators
+        df['dynamic_ncaa_tournament'] = (df['dynamic_game_month'] == 3).astype(int)
+        
+        # Holiday game indicators
+        holidays = [1, 2, 7, 11, 12]  # January, February, July, November, December
+        df['dynamic_holiday_game'] = df['dynamic_game_month'].isin(holidays).astype(int)
+        
+        return df
+    
+    def _add_situational_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add situational and context features."""
+        # Rivalry indicators (placeholder - would come from team database)
+        np.random.seed(42)
+        
+        # Rivalry game indicators
+        df['dynamic_rivalry_game'] = np.random.choice([0, 1], len(df), p=[0.8, 0.2])
+        
+        # Conference game indicators (placeholder)
+        df['dynamic_conference_game'] = np.random.choice([0, 1], len(df), p=[0.6, 0.4])
+        
+        # Non-conference game indicators
+        df['dynamic_non_conference_game'] = (df['dynamic_conference_game'] == 0).astype(int)
+        
+        # Homecoming indicators (placeholder)
+        df['dynamic_homecoming_game'] = np.random.choice([0, 1], len(df), p=[0.9, 0.1])
+        
+        # Senior night indicators (placeholder)
+        df['dynamic_senior_night'] = np.random.choice([0, 1], len(df), p=[0.95, 0.05])
+        
+        # Special event indicators
+        df['dynamic_special_event'] = (
+            df['dynamic_rivalry_game'] | 
+            df['dynamic_homecoming_game'] | 
+            df['dynamic_senior_night']
+        ).astype(int)
+        
+        # Game importance indicators
+        df['dynamic_high_importance'] = (
+            df['dynamic_rivalry_game'] | 
+            df['dynamic_conference_tournament'] | 
+            df['dynamic_ncaa_tournament']
+        ).astype(int)
+        
+        # Pressure situation indicators
+        df['dynamic_pressure_situation'] = (
+            df['dynamic_high_importance'] | 
+            df['dynamic_conference_game']
+        ).astype(int)
         
         return df
     
     def _add_momentum_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add momentum index features.
+        """Add momentum and recent performance features."""
+        # Sort by team and date for rolling calculations
+        df = df.sort_values(['home_team', 'date'])
         
-        Args:
-            df: Input DataFrame
-            
-        Returns:
-            DataFrame with momentum features added
-        """
-        # Momentum Index: M_t = α * Δscore_t + β * Δpossessions_t
+        # Home team recent performance (last 3 games)
+        df['dynamic_home_recent_momentum'] = df.groupby('home_team')['home_score'].rolling(
+            window=3, min_periods=1
+        ).mean().reset_index(0, drop=True)
         
-        # Score change (Δscore)
-        df['score_change'] = df['score_differential'].diff().fillna(0)
+        # Home team recent defensive performance
+        df['dynamic_home_recent_defense'] = df.groupby('home_team')['away_score'].rolling(
+            window=3, min_periods=1
+        ).mean().reset_index(0, drop=True)
         
-        # Possession change (Δpossessions) - placeholder for real PBP data
-        # In production, this would come from actual possession tracking
-        np.random.seed(42)
-        df['possession_change'] = np.random.choice([-1, 0, 1], len(df), p=[0.3, 0.4, 0.3])
+        # Sort by away team and date
+        df = df.sort_values(['away_team', 'date'])
         
-        # Momentum index calculation
-        df['momentum_index'] = (
-            self.momentum_alpha * df['score_change'] + 
-            self.momentum_beta * df['possession_change']
+        # Away team recent performance (last 3 games)
+        df['dynamic_away_recent_momentum'] = df.groupby('away_team')['away_score'].rolling(
+            window=3, min_periods=1
+        ).mean().reset_index(0, drop=True)
+        
+        # Away team recent defensive performance
+        df['dynamic_away_recent_defense'] = df.groupby('away_team')['home_score'].rolling(
+            window=3, min_periods=1
+        ).mean().reset_index(0, drop=True)
+        
+        # Sort back to original order
+        df = df.sort_index()
+        
+        # Momentum differentials
+        df['dynamic_momentum_diff'] = df['dynamic_home_recent_momentum'] - df['dynamic_away_recent_momentum']
+        df['dynamic_defense_diff'] = df['dynamic_away_recent_defense'] - df['dynamic_home_recent_defense']
+        
+        # Combined momentum score
+        df['dynamic_home_momentum_score'] = (
+            df['dynamic_home_recent_momentum'] - df['dynamic_home_recent_defense']
         )
         
-        # Rolling momentum (last N plays)
-        for window in [3, 5, 10]:
-            df[f'momentum_rolling_{window}'] = df['momentum_index'].rolling(
-                window=window, min_periods=1
-            ).mean()
+        df['dynamic_away_momentum_score'] = (
+            df['dynamic_away_recent_momentum'] - df['dynamic_away_recent_defense']
+        )
         
-        # Momentum acceleration (change in momentum)
-        df['momentum_acceleration'] = df['momentum_index'].diff().fillna(0)
+        # Overall momentum differential
+        df['dynamic_overall_momentum_diff'] = df['dynamic_home_momentum_score'] - df['dynamic_away_momentum_score']
         
-        # Momentum volatility
-        df['momentum_volatility'] = df['momentum_index'].rolling(
-            window=10, min_periods=1
-        ).std().fillna(0)
-        
-        # Momentum regime indicators
-        df['high_momentum'] = (df['momentum_index'] > df['momentum_index'].quantile(0.75)).astype(int)
-        df['low_momentum'] = (df['momentum_index'] < df['momentum_index'].quantile(0.25)).astype(int)
+        # Momentum categories
+        df['dynamic_momentum_category'] = pd.cut(
+            df['dynamic_overall_momentum_diff'],
+            bins=[-50, -20, -10, 0, 10, 20, 50],
+            labels=['strong_away', 'moderate_away', 'slight_away', 'even', 'slight_home', 'moderate_home', 'strong_home']
+        )
         
         return df
-    
-    def _add_streak_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add run-length encoding for streaks.
-        
-        Args:
-            df: Input DataFrame
-            
-        Returns:
-            DataFrame with streak features added
-        """
-        # Run-length encoding for score differential streaks
-        df = df.sort_values(['game_id', 'quarter', 'time_remaining'])
-        
-        # Home team scoring streaks
-        df['home_scoring_streak'] = self._encode_run_lengths(df['score_differential'] > 0)
-        
-        # Away team scoring streaks
-        df['away_scoring_streak'] = self._encode_run_lengths(df['score_differential'] < 0)
-        
-        # Tied game streaks
-        df['tied_streak'] = self._encode_run_lengths(df['score_differential'] == 0)
-        
-        # Lead change frequency
-        df['lead_changes_rolling_10'] = df['lead_change'].rolling(
-            window=10, min_periods=1
-        ).sum()
-        
-        # Streak momentum
-        df['home_streak_momentum'] = df['home_scoring_streak'] * df['momentum_index']
-        df['away_streak_momentum'] = df['away_scoring_streak'] * df['momentum_index']
-        
-        # Streak break indicators
-        df['home_streak_broken'] = (df['home_scoring_streak'] == 1).astype(int)
-        df['away_streak_broken'] = (df['away_scoring_streak'] == 1).astype(int)
-        
-        return df
-    
-    def _add_possession_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add possession-based features.
-        
-        Args:
-            df: Input DataFrame
-            
-        Returns:
-            DataFrame with possession features added
-        """
-        # Possession efficiency (placeholder for real data)
-        np.random.seed(42)
-        
-        # Simulated possession data
-        df['possession_duration'] = np.random.exponential(20, len(df))  # seconds
-        df['possession_efficiency'] = np.random.uniform(0.3, 0.7, len(df))
-        
-        # Possession count
-        df['possession_count'] = df.groupby('game_id').cumcount() + 1
-        
-        # Possession pace
-        df['possession_pace'] = df['possession_duration'].rolling(
-            window=5, min_periods=1
-        ).mean()
-        
-        # Possession efficiency rolling
-        for window in [3, 5, 10]:
-            df[f'possession_efficiency_rolling_{window}'] = df['possession_efficiency'].rolling(
-                window=window, min_periods=1
-            ).mean()
-        
-        # Possession advantage
-        df['possession_advantage'] = df['possession_efficiency'] - df['possession_efficiency'].rolling(
-            window=10, min_periods=1
-        ).mean()
-        
-        # Fast break indicators (placeholder)
-        df['fast_break'] = (df['possession_duration'] < 10).astype(int)
-        df['slow_break'] = (df['possession_duration'] > 30).astype(int)
-        
-        return df
-    
-    def _add_time_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add time-based features.
-        
-        Args:
-            df: Input DataFrame
-            
-        Returns:
-            DataFrame with time features added
-        """
-        # Time remaining features
-        df['time_remaining_minutes'] = df['time_remaining'] / 60.0
-        
-        # Quarter time progression
-        df['quarter_time_progression'] = (1200 - df['time_remaining']) / 1200.0
-        
-        # Game time progression
-        df['game_time_progression'] = ((4 - df['quarter']) * 1200 + (1200 - df['time_remaining'])) / 4800.0
-        
-        # Time pressure indicators
-        df['high_time_pressure'] = (df['time_remaining'] <= 120).astype(int)  # Last 2 minutes
-        df['medium_time_pressure'] = ((df['time_remaining'] > 120) & (df['time_remaining'] <= 300)).astype(int)  # Last 5 minutes
-        
-        # Quarter transition indicators
-        df['quarter_start'] = (df['time_remaining'] >= 1180).astype(int)  # First 20 seconds
-        df['quarter_end'] = (df['time_remaining'] <= 20).astype(int)      # Last 20 seconds
-        
-        # Halftime indicator
-        df['halftime'] = ((df['quarter'] == 2) & (df['time_remaining'] <= 20)).astype(int)
-        
-        # Overtime indicators
-        df['overtime_period'] = (df['quarter'] > 4).astype(int)
-        
-        return df
-    
-    def _add_rolling_flow_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add rolling game flow features.
-        
-        Args:
-            df: Input DataFrame
-            
-        Returns:
-            DataFrame with rolling flow features added
-        """
-        # Sort by game and time for rolling calculations
-        df = df.sort_values(['game_id', 'quarter', 'time_remaining'])
-        
-        # Rolling score differential
-        for window in [3, 5, 10]:
-            df[f'score_diff_rolling_{window}'] = df['score_differential'].rolling(
-                window=window, min_periods=1
-            ).mean()
-            
-            df[f'score_diff_volatility_{window}'] = df['score_differential'].rolling(
-                window=window, min_periods=1
-            ).std().fillna(0)
-        
-        # Rolling momentum features
-        for window in [3, 5, 10]:
-            df[f'momentum_volatility_{window}'] = df['momentum_index'].rolling(
-                window=window, min_periods=1
-            ).std().fillna(0)
-            
-            df[f'momentum_trend_{window}'] = df['momentum_index'].rolling(
-                window=window, min_periods=1
-            ).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) > 1 else 0)
-        
-        # Rolling possession features
-        for window in [3, 5, 10]:
-            df[f'possession_pace_rolling_{window}'] = df['possession_pace'].rolling(
-                window=window, min_periods=1
-            ).mean()
-            
-            df[f'possession_efficiency_volatility_{window}'] = df['possession_efficiency'].rolling(
-                window=window, min_periods=1
-            ).std().fillna(0)
-        
-        return df
-    
-    def _encode_run_lengths(self, series: pd.Series) -> pd.Series:
-        """Encode run lengths for a boolean series.
-        
-        Args:
-            series: Boolean series to encode
-            
-        Returns:
-            Series with run lengths
-        """
-        # Group consecutive True values and count them
-        groups = (series != series.shift()).cumsum()
-        run_lengths = series.groupby(groups).cumsum()
-        
-        # Reset to 0 when False
-        run_lengths = run_lengths.where(series, 0)
-        
-        return run_lengths
-    
-    def compute_momentum_index(self, score_change: float, possession_change: float) -> float:
-        """Compute momentum index for given score and possession changes.
-        
-        Args:
-            score_change: Change in score differential
-            possession_change: Change in possession count
-            
-        Returns:
-            Momentum index value
-        """
-        return self.momentum_alpha * score_change + self.momentum_beta * possession_change
-    
-    def get_feature_columns(self) -> List[str]:
-        """Get list of all feature columns generated by this engineer.
-        
-        Returns:
-            List of feature column names
-        """
-        basic_features = [
-            'score_differential', 'lead_change', 'quarter_progression', 'time_pressure',
-            'early_game', 'late_game', 'final_minutes'
-        ]
-        
-        momentum_features = [
-            'score_change', 'possession_change', 'momentum_index', 'momentum_acceleration',
-            'momentum_volatility', 'high_momentum', 'low_momentum'
-        ]
-        
-        rolling_momentum_features = []
-        for window in [3, 5, 10]:
-            rolling_momentum_features.extend([
-                f'momentum_rolling_{window}', f'momentum_volatility_{window}', f'momentum_trend_{window}'
-            ])
-        
-        streak_features = [
-            'home_scoring_streak', 'away_scoring_streak', 'tied_streak',
-            'lead_changes_rolling_10', 'home_streak_momentum', 'away_streak_momentum',
-            'home_streak_broken', 'away_streak_broken'
-        ]
-        
-        possession_features = [
-            'possession_duration', 'possession_efficiency', 'possession_count',
-            'possession_pace', 'possession_advantage', 'fast_break', 'slow_break'
-        ]
-        
-        rolling_possession_features = []
-        for window in [3, 5, 10]:
-            rolling_possession_features.extend([
-                f'possession_efficiency_rolling_{window}', f'possession_pace_rolling_{window}',
-                f'possession_efficiency_volatility_{window}'
-            ])
-        
-        time_features = [
-            'time_remaining_minutes', 'quarter_time_progression', 'game_time_progression',
-            'high_time_pressure', 'medium_time_pressure', 'quarter_start', 'quarter_end',
-            'halftime', 'overtime_period'
-        ]
-        
-        rolling_flow_features = []
-        for window in [3, 5, 10]:
-            rolling_flow_features.extend([
-                f'score_diff_rolling_{window}', f'score_diff_volatility_{window}'
-            ])
-        
-        return (basic_features + momentum_features + rolling_momentum_features + 
-                streak_features + possession_features + rolling_possession_features + 
-                time_features + rolling_flow_features)
-
-
-def create_dynamic_feature_engineer(config_path: str = "config.yaml") -> DynamicFeatureEngineer:
-    """Create and return a dynamic feature engineer instance.
-    
-    Args:
-        config_path: Path to configuration file
-        
-    Returns:
-        DynamicFeatureEngineer instance
-    """
-    config = ConfigManager(config_path)
-    return DynamicFeatureEngineer(config)
-
-
-# Example usage and testing
-if __name__ == "__main__":
-    # Test the dynamic feature engineer
-    try:
-        engineer = create_dynamic_feature_engineer()
-        
-        # Create sample play-by-play data
-        sample_pbp = pd.DataFrame({
-            'game_id': ['game_1'] * 20,
-            'quarter': [1] * 5 + [2] * 5 + [3] * 5 + [4] * 5,
-            'time_remaining': list(range(1200, 0, -60)),
-            'home_score': [0, 2, 5, 7, 10, 12, 15, 18, 20, 25, 28, 30, 35, 38, 40, 45, 48, 50, 55, 58],
-            'away_score': [0, 0, 2, 5, 7, 10, 12, 15, 18, 20, 22, 25, 28, 30, 32, 35, 38, 40, 42, 45]
-        })
-        
-        # Compute features
-        features = engineer.compute_game_flow(sample_pbp)
-        
-        print(f"Generated {len(features)} feature rows")
-        print(f"Feature columns: {len(features.columns)}")
-        print(f"Sample momentum features:\n{features[['momentum_index', 'momentum_rolling_5', 'home_scoring_streak']].head()}")
-        
-    except Exception as e:
-        print(f"Error: {e}")

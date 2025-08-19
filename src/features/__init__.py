@@ -1,55 +1,32 @@
 """
-Feature Engineering Package for CBB Betting ML System (Phase 2).
+Feature Engineering Package for NCAA CBB Betting ML System (Phase 2).
 
-This package provides comprehensive feature engineering capabilities including:
-- Team context and performance features
-- Dynamic game flow and momentum features
-- Player availability and injury features
+This package provides modular feature engineering capabilities including:
+- Team performance and efficiency features
+- Player availability and impact features
 - Market efficiency and odds-based features
+- Dynamic situational features
 - Orchestrated feature pipeline for ML model preparation
 """
 
 __version__ = "2.0.0"
-__author__ = "CBB Betting ML Team"
+__author__ = "NCAA CBB Betting ML Team"
 
 # Import main feature engineering classes
-from .team_features import TeamFeatureEngineer, create_team_feature_engineer
-from .dynamic_features import DynamicFeatureEngineer, create_dynamic_feature_engineer
-from .player_features import PlayerFeatureEngineer, create_player_feature_engineer
-from .market_features import MarketFeatureEngineer, create_market_feature_engineer
-from .feature_pipeline import FeaturePipeline, create_feature_pipeline
-from .feature_utils import FeatureUtils, create_feature_utils
+from .team_features import TeamFeatures
+from .player_features import PlayerFeatures
+from .market_features import MarketFeatures
+from .dynamic_features import DynamicFeatures
+from .feature_pipeline import FeaturePipeline
 
 # Import utility functions
-from .feature_utils import (
-    calculate_rolling_averages,
-    compute_momentum_index,
-    encode_run_lengths,
-    calculate_line_drift,
-    compute_implied_probability_edge,
-    validate_feature_set
-)
+from .feature_utils import normalize_series
 
 __all__ = [
-    # Main feature engineers
-    'TeamFeatureEngineer',
-    'create_team_feature_engineer',
-    'DynamicFeatureEngineer', 
-    'create_dynamic_feature_engineer',
-    'PlayerFeatureEngineer',
-    'create_player_feature_engineer',
-    'MarketFeatureEngineer',
-    'create_market_feature_engineer',
+    'TeamFeatures',
+    'PlayerFeatures', 
+    'MarketFeatures',
+    'DynamicFeatures',
     'FeaturePipeline',
-    'create_feature_pipeline',
-    'FeatureUtils',
-    'create_feature_utils',
-    
-    # Utility functions
-    'calculate_rolling_averages',
-    'compute_momentum_index',
-    'encode_run_lengths',
-    'calculate_line_drift',
-    'compute_implied_probability_edge',
-    'validate_feature_set'
+    'normalize_series'
 ]

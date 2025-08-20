@@ -77,6 +77,9 @@ class Normalizer:
             q75, q25 = series.quantile([0.75, 0.25])
             self.params["median"] = median
             self.params["iqr"] = q75 - q25
+        elif self.method == "log":
+            # Log transform doesn't need fitting parameters
+            pass
         
         self.is_fitted = True
     
@@ -111,6 +114,8 @@ class Normalizer:
             if iqr_val == 0:
                 return pd.Series(0, index=series.index)
             return (series - median_val) / (iqr_val + 1e-9)
+        elif self.method == "log":
+            return log_transform(series)
         else:
             return series
     
@@ -200,8 +205,45 @@ def normalize(series, method="minmax"):
         if iqr == 0:
             return pd.Series(0, index=series.index, name=series.name)
         return (series - median) / iqr
+    elif method == "log":
+        return log_transform(series)
     else:
         raise ValueError(f"Unknown normalization method: {method}")
+
+def log_transform(series):
+    """
+    Apply log transform: x'ᵢ = log(xᵢ + 1)
+    
+    Parameters
+    ----------
+    series : pd.Series or np.ndarray
+        Input data, must be non-negative.
+        
+    Returns
+    -------
+    transformed : same type as input
+        Log-transformed values.
+        
+    Raises
+    ------
+    ValueError
+        If input contains negative values.
+        
+    Notes
+    -----
+    Uses np.log1p for numerical stability instead of np.log(series + 1).
+    """
+    # Handle both pandas Series and numpy arrays
+    if hasattr(series, 'values'):
+        # Pandas Series
+        if (series < 0).any():
+            raise ValueError("Log transform requires non-negative input values.")
+        return pd.Series(np.log1p(series.values), index=series.index, name=series.name)
+    else:
+        # Numpy array
+        if np.any(series < 0):
+            raise ValueError("Log transform requires non-negative input values.")
+        return np.log1p(series)
 
 def scale(df, columns=None, method="zscore"):
     """
@@ -222,7 +264,10 @@ def scale(df, columns=None, method="zscore"):
     
     for col in columns:
         if col in df.columns and df[col].dtype in [np.number]:
-            df_scaled[col] = normalize(df[col], method)
+            if method == "log":
+                df_scaled[col] = log_transform(df[col])
+            else:
+                df_scaled[col] = normalize(df[col], method)
     
     return df_scaled
 

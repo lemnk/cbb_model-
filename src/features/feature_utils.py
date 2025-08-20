@@ -131,6 +131,36 @@ class Normalizer:
         """
         self.fit(series)
         return self.transform(series)
+    
+    def inverse_transform(self, series):
+        """
+        Inverse transform data back to original scale.
+        
+        Args:
+            series: Transformed data series
+            
+        Returns:
+            Series in original scale
+        """
+        if not self.is_fitted:
+            raise ValueError("Normalizer must be fitted before inverse_transform")
+        
+        if self.method == "minmax":
+            min_val = self.params["min"]
+            max_val = self.params["max"]
+            return series * (max_val - min_val) + min_val
+        elif self.method == "zscore":
+            mean_val = self.params["mean"]
+            std_val = self.params["std"]
+            return series * std_val + mean_val
+        elif self.method == "robust":
+            median_val = self.params["median"]
+            iqr_val = self.params["iqr"]
+            return series * iqr_val + median_val
+        elif self.method == "log":
+            return inverse_log_transform(series)
+        else:
+            return series
 
 def safe_fill(df, col, fill_value=0):
     """
@@ -244,6 +274,33 @@ def log_transform(series):
         if np.any(series < 0):
             raise ValueError("Log transform requires non-negative input values.")
         return np.log1p(series)
+
+def inverse_log_transform(series):
+    """
+    Apply inverse log transform: xᵢ = exp(x'ᵢ) - 1
+    
+    Parameters
+    ----------
+    series : pd.Series or np.ndarray
+        Log-transformed data.
+        
+    Returns
+    -------
+    original : same type as input
+        Original values: exp(series) - 1
+        
+    Notes
+    -----
+    Uses np.expm1 for numerical stability.
+    This is the inverse operation of log_transform.
+    """
+    # Handle both pandas Series and numpy arrays
+    if hasattr(series, 'values'):
+        # Pandas Series
+        return pd.Series(np.expm1(series.values), index=series.index, name=series.name)
+    else:
+        # Numpy array
+        return np.expm1(series)
 
 def scale(df, columns=None, method="zscore"):
     """

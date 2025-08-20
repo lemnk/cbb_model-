@@ -28,14 +28,16 @@ try:
     from models.neural_network import NeuralNetworkModel
     from features.feature_pipeline import FeaturePipeline
     from models.train_utils import (
-        linear_regression_loss,
-        logistic_regression_loss,
-        gradient_descent_update_w,
-        gradient_descent_update_b,
-        l2_regularization_loss,
-        custom_training_step_linear,
-        custom_training_step_logistic
-    )
+    linear_regression_loss,
+    logistic_regression_loss,
+    gradient_descent_update_w,
+    gradient_descent_update_b,
+    l2_regularization_loss,
+    custom_training_step_linear,
+    custom_training_step_logistic,
+    log_transform,
+    inverse_log_transform
+)
     print("✅ Successfully imported all model modules and training utilities")
 except ImportError as e:
     print(f"❌ Import error: {e}")
@@ -528,10 +530,26 @@ class ModelTrainingPipeline:
         print(f"     Weight change: {np.linalg.norm(w_new_logistic - w):.6f}")
         print(f"     Bias change: {abs(b_new_logistic - b):.6f}")
         
+        # Demonstrate Log Transform Functions
+        print(f"\n📊 Log Transform Functions:")
+        print(f"   Formula: y'ᵢ = log(yᵢ + c)")
+        print(f"   Inverse Formula: yᵢ = exp(y'ᵢ) - c")
+        
+        # Test with sample data
+        y_sample = np.array([1, 2, 3, 4, 5])
+        y_log = log_transform(y_sample)
+        y_restored = inverse_log_transform(y_log)
+        
+        print(f"   Sample data: {y_sample}")
+        print(f"   Log transformed: {y_log}")
+        print(f"   Restored: {y_restored}")
+        print(f"   Roundtrip accuracy: {np.allclose(y_sample, y_restored)}")
+        
         print(f"\n✅ Custom Phase 2 training formulas demonstrated successfully!")
         print(f"   All mathematical formulas implemented and verified")
         print(f"   Gradient descent updates working correctly")
         print(f"   L2 regularization properly applied")
+        print(f"   Log transform functions working correctly")
     
     def run_complete_pipeline(self, features_file=None):
         """

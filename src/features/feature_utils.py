@@ -10,448 +10,309 @@ This module provides common utility functions for feature engineering including:
 
 import pandas as pd
 import numpy as np
-from sqlalchemy import create_engine
-from datetime import datetime, timedelta
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
-
-def normalize_series(series, method="zscore"):
-    """Normalize a Pandas Series by z-score or min-max.
+def normalize(series, method="minmax"):
+    """
+    Normalize a Pandas Series using specified method.
     
     Args:
         series: Pandas Series to normalize
-        method: Normalization method ('zscore' or 'minmax')
+        method: Normalization method ('minmax', 'zscore', 'robust')
         
     Returns:
-        Normalized Series
+        Normalized Pandas Series
     """
-    if method == "zscore":
-        return (series - series.mean()) / series.std()
-    elif method == "minmax":
-        return (series - series.min()) / (series.max() - series.min())
+    if series.empty:
+        return series
+    
+    if method == "minmax":
+        scaler = MinMaxScaler()
+        return pd.Series(
+            scaler.fit_transform(series.values.reshape(-1, 1)).flatten(),
+            index=series.index,
+            name=series.name
+        )
+    elif method == "zscore":
+        scaler = StandardScaler()
+        return pd.Series(
+            scaler.fit_transform(series.values.reshape(-1, 1)).flatten(),
+            index=series.index,
+            name=series.name
+        )
+    elif method == "robust":
+        # Robust scaling using median and IQR
+        median = series.median()
+        q75, q25 = series.quantile([0.75, 0.25])
+        iqr = q75 - q25
+        if iqr == 0:
+            return pd.Series(0, index=series.index, name=series.name)
+        return (series - median) / iqr
     else:
-        raise ValueError("Method must be 'zscore' or 'minmax'")
+        raise ValueError(f"Unknown normalization method: {method}")
 
-
-class FeatureUtils:
-    """Utility class for common feature engineering operations."""
-    
-    def __init__(self):
-        """Initialize the feature utilities."""
-        pass
-    
-    @staticmethod
-    def calculate_rolling_averages(df: pd.DataFrame, column: str, windows: list = [3, 5, 10]) -> pd.DataFrame:
-        """Calculate rolling averages for a given column.
-        
-        Args:
-            df: Input DataFrame
-            column: Column to calculate rolling averages for
-            windows: List of window sizes
-            
-        Returns:
-            DataFrame with rolling average columns added
-        """
-        result_df = df.copy()
-        
-        for window in windows:
-            col_name = f"{column}_rolling_{window}"
-            result_df[col_name] = df[column].rolling(window=window, min_periods=1).mean()
-        
-        return result_df
-    
-    @staticmethod
-    def compute_momentum_index(score_change: pd.Series, possession_change: pd.Series, 
-                              alpha: float = 0.7, beta: float = 0.3) -> pd.Series:
-        """Compute momentum index: M_t = α * Δscore_t + β * Δpossessions_t.
-        
-        Args:
-            score_change: Series of score changes
-            possession_change: Series of possession changes
-            alpha: Weight for score change (default: 0.7)
-            beta: Weight for possession change (default: 0.3)
-            
-        Returns:
-            Series of momentum index values
-        """
-        return alpha * score_change + beta * possession_change
-    
-    @staticmethod
-    def encode_run_lengths(series: pd.Series) -> pd.Series:
-        """Encode run lengths for a boolean series.
-        
-        Args:
-            series: Boolean series to encode
-            
-        Returns:
-            Series with run lengths
-        """
-        # Group consecutive True values and count them
-        groups = (series != series.shift()).cumsum()
-        run_lengths = series.groupby(groups).cumsum()
-        
-        # Reset to 0 when False
-        run_lengths = run_lengths.where(series, 0)
-        
-        return run_lengths
-    
-    @staticmethod
-    def calculate_line_drift(open_line: pd.Series, close_line: pd.Series) -> pd.Series:
-        """Calculate line drift between open and close.
-        
-        Args:
-            open_line: Series of opening line values
-            close_line: Series of closing line values
-            
-        Returns:
-            Series of line drift values
-        """
-        return close_line - open_line
-    
-    @staticmethod
-    def compute_implied_probability_edge(model_prob: pd.Series, market_prob: pd.Series) -> pd.Series:
-        """Compute implied probability edge between model and market.
-        
-        Args:
-            model_prob: Model's predicted probabilities
-            market_prob: Market's implied probabilities
-            
-        Returns:
-            Series of probability edges (positive = overlay, negative = underlay)
-        """
-        return model_prob - market_prob
-    
-    @staticmethod
-    def moneyline_to_probability(moneyline: pd.Series) -> pd.Series:
-        """Convert moneyline odds to implied probability.
-        
-        Args:
-            moneyline: Series of moneyline odds
-            
-        Returns:
-            Series of implied probabilities
-        """
-        def ml_to_prob(ml):
-            if ml > 0:
-                return 100 / (ml + 100)
-            else:
-                return abs(ml) / (abs(ml) + 100)
-        
-        return moneyline.apply(ml_to_prob)
-    
-    @staticmethod
-    def calculate_rolling_trends(df: pd.DataFrame, column: str, windows: list = [5, 10, 20]) -> pd.DataFrame:
-        """Calculate rolling trend slopes for a given column.
-        
-        Args:
-            df: Input DataFrame
-            column: Column to calculate trends for
-            windows: List of window sizes
-            
-        Returns:
-            DataFrame with rolling trend columns added
-        """
-        result_df = df.copy()
-        
-        for window in windows:
-            col_name = f"{column}_trend_{window}"
-            result_df[col_name] = df[column].rolling(
-                window=window, min_periods=2
-            ).apply(lambda x: np.polyfit(range(len(x)), x, 1)[0] if len(x) > 1 else 0)
-        
-        return result_df
-    
-    @staticmethod
-    def calculate_rolling_volatility(df: pd.DataFrame, column: str, windows: list = [5, 10, 20]) -> pd.DataFrame:
-        """Calculate rolling volatility (standard deviation) for a given column.
-        
-        Args:
-            df: Input DataFrame
-            column: Column to calculate volatility for
-            windows: List of window sizes
-            
-        Returns:
-            DataFrame with rolling volatility columns added
-        """
-        result_df = df.copy()
-        
-        for window in windows:
-            col_name = f"{column}_volatility_{window}"
-            result_df[col_name] = df[column].rolling(window=window, min_periods=1).std()
-        
-        return result_df
-    
-    @staticmethod
-    def create_lag_features(df: pd.DataFrame, columns: list, lags: list = [1, 2, 3]) -> pd.DataFrame:
-        """Create lag features for specified columns.
-        
-        Args:
-            df: Input DataFrame
-            columns: List of columns to create lags for
-            lags: List of lag periods
-            
-        Returns:
-            DataFrame with lag features added
-        """
-        result_df = df.copy()
-        
-        for col in columns:
-            for lag in lags:
-                col_name = f"{col}_lag_{lag}"
-                result_df[col_name] = df[col].shift(lag)
-        
-        return result_df
-    
-    @staticmethod
-    def create_lead_features(df: pd.DataFrame, columns: list, leads: list = [1, 2, 3]) -> pd.DataFrame:
-        """Create lead features for specified columns.
-        
-        Args:
-            df: Input DataFrame
-            columns: List of columns to create leads for
-            leads: List of lead periods
-            
-        Returns:
-            DataFrame with lead features added
-        """
-        result_df = df.copy()
-        
-        for col in columns:
-            for lead in leads:
-                col_name = f"{col}_lead_{lead}"
-                result_df[col_name] = df[col].shift(-lead)
-        
-        return result_df
-    
-    @staticmethod
-    def calculate_percentile_features(df: pd.DataFrame, columns: list, percentiles: list = [25, 50, 75]) -> pd.DataFrame:
-        """Calculate percentile-based features for specified columns.
-        
-        Args:
-            df: Input DataFrame
-            columns: List of columns to calculate percentiles for
-            percentiles: List of percentiles to calculate
-            
-        Returns:
-            DataFrame with percentile features added
-        """
-        result_df = df.copy()
-        
-        for col in columns:
-            for pct in percentiles:
-                col_name = f"{col}_pct_{pct}"
-                result_df[col_name] = df[col].quantile(pct / 100)
-        
-        return result_df
-    
-    @staticmethod
-    def validate_feature_set(df: pd.DataFrame) -> dict:
-        """Validate feature set quality and identify potential issues.
-        
-        Args:
-            df: Feature DataFrame to validate
-            
-        Returns:
-            Dictionary with validation results
-        """
-        validation_results = {
-            'total_rows': len(df),
-            'total_columns': len(df.columns),
-            'missing_values': df.isnull().sum().sum(),
-            'missing_percentage': (df.isnull().sum().sum() / (len(df) * len(df.columns))) * 100,
-            'duplicate_rows': df.duplicated().sum(),
-            'duplicate_percentage': (df.duplicated().sum() / len(df)) * 100,
-            'constant_columns': (df.nunique() == 1).sum(),
-            'high_cardinality_columns': (df.nunique() > len(df) * 0.5).sum()
-        }
-        
-        # Check for infinite values
-        validation_results['infinite_values'] = np.isinf(df.select_dtypes(include=[np.number])).sum().sum()
-        
-        # Check for extreme values (beyond 3 standard deviations)
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-        extreme_values = 0
-        for col in numeric_cols:
-            if df[col].std() > 0:
-                z_scores = np.abs((df[col] - df[col].mean()) / df[col].std())
-                extreme_values += (z_scores > 3).sum()
-        
-        validation_results['extreme_values'] = extreme_values
-        
-        return validation_results
-    
-    @staticmethod
-    def remove_low_variance_features(df: pd.DataFrame, threshold: float = 0.01) -> pd.DataFrame:
-        """Remove features with low variance.
-        
-        Args:
-            df: Input DataFrame
-            threshold: Variance threshold (features below this will be removed)
-            
-        Returns:
-            DataFrame with low variance features removed
-        """
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-        
-        # Calculate variance for each numeric column
-        variances = df[numeric_cols].var()
-        
-        # Keep columns above threshold
-        keep_cols = variances[variances > threshold].index.tolist()
-        
-        # Add back non-numeric columns
-        non_numeric_cols = df.select_dtypes(exclude=[np.number]).columns
-        keep_cols.extend(non_numeric_cols)
-        
-        return df[keep_cols]
-    
-    @staticmethod
-    def create_feature_summary(df: pd.DataFrame) -> pd.DataFrame:
-        """Create a comprehensive summary of the feature set.
-        
-        Args:
-            df: Feature DataFrame to summarize
-            
-        Returns:
-            DataFrame with feature summary
-        """
-        summary_data = []
-        
-        for col in df.columns:
-            col_info = {
-                'feature_name': col,
-                'data_type': str(df[col].dtype),
-                'missing_count': df[col].isnull().sum(),
-                'missing_percentage': (df[col].isnull().sum() / len(df)) * 100,
-                'unique_count': df[col].nunique()
-            }
-            
-            # Add numeric-specific statistics
-            if df[col].dtype in ['int64', 'float64']:
-                col_info.update({
-                    'mean': df[col].mean(),
-                    'std': df[col].std(),
-                    'min': df[col].min(),
-                    'max': df[col].max(),
-                    'median': df[col].median()
-                })
-            else:
-                col_info.update({
-                    'mean': None,
-                    'std': None,
-                    'min': None,
-                    'max': None,
-                    'median': None
-                })
-            
-            summary_data.append(col_info)
-        
-        return pd.DataFrame(summary_data)
-
-
-# Standalone functions for direct import
-def normalize_features(df: pd.DataFrame, columns: list = None, method: str = "zscore") -> pd.DataFrame:
-    """Normalize specified columns in a DataFrame.
+def scale(df, columns=None, method="zscore"):
+    """
+    Scale multiple columns in a DataFrame.
     
     Args:
-        df: Input DataFrame
-        columns: List of columns to normalize (if None, normalize all numeric columns)
-        method: Normalization method ('zscore' or 'minmax')
+        df: DataFrame to scale
+        columns: List of column names to scale (None = all numeric)
+        method: Scaling method ('minmax', 'zscore', 'robust')
         
     Returns:
-        DataFrame with normalized columns
+        DataFrame with scaled columns
     """
-    result_df = df.copy()
+    df_scaled = df.copy()
     
     if columns is None:
-        columns = df.select_dtypes(include=[np.number]).columns
+        columns = df.select_dtypes(include=[np.number]).columns.tolist()
     
     for col in columns:
-        if col in df.columns:
-            result_df[f"{col}_normalized"] = normalize_series(df[col], method)
+        if col in df.columns and df[col].dtype in [np.number]:
+            df_scaled[col] = normalize(df[col], method)
     
-    return result_df
+    return df_scaled
 
-
-def create_interaction_features(df: pd.DataFrame, columns: list, max_interactions: int = 10) -> pd.DataFrame:
-    """Create interaction features between specified columns.
+def handle_missing(df, strategy="zero", columns=None):
+    """
+    Handle missing values in DataFrame.
     
     Args:
-        df: Input DataFrame
-        columns: List of columns to create interactions for
-        max_interactions: Maximum number of interaction features to create
+        df: DataFrame to process
+        strategy: Strategy for handling missing values
+                 ('zero', 'mean', 'median', 'drop', 'forward_fill')
+        columns: List of column names to process (None = all)
         
     Returns:
-        DataFrame with interaction features added
+        DataFrame with missing values handled
     """
-    result_df = df.copy()
+    df_processed = df.copy()
     
-    if len(columns) < 2:
-        return result_df
+    if columns is None:
+        columns = df.columns.tolist()
     
-    interaction_count = 0
-    
-    for i in range(len(columns)):
-        for j in range(i + 1, len(columns)):
-            if interaction_count >= max_interactions:
-                break
-                
-            col1, col2 = columns[i], columns[j]
+    for col in columns:
+        if col not in df.columns:
+            continue
             
-            # Only create interactions for numeric columns
-            if df[col1].dtype in ['int64', 'float64'] and df[col2].dtype in ['int64', 'float64']:
-                # Multiplication interaction
-                result_df[f"{col1}_x_{col2}"] = df[col1] * df[col2]
-                
-                # Division interaction (avoid division by zero)
-                if (df[col2] != 0).all():
-                    result_df[f"{col1}_div_{col2}"] = df[col1] / df[col2]
-                
-                interaction_count += 1
+        if df[col].isnull().any():
+            if strategy == "zero":
+                df_processed[col] = df[col].fillna(0)
+            elif strategy == "mean":
+                if df[col].dtype in [np.number]:
+                    df_processed[col] = df[col].fillna(df[col].mean())
+                else:
+                    df_processed[col] = df[col].fillna(df[col].mode().iloc[0] if not df[col].mode().empty else "unknown")
+            elif strategy == "median":
+                if df[col].dtype in [np.number]:
+                    df_processed[col] = df[col].fillna(df[col].median())
+                else:
+                    df_processed[col] = df[col].fillna(df[col].mode().iloc[0] if not df[col].mode().empty else "unknown")
+            elif strategy == "drop":
+                df_processed = df_processed.dropna(subset=[col])
+            elif strategy == "forward_fill":
+                df_processed[col] = df[col].fillna(method='ffill')
+            else:
+                raise ValueError(f"Unknown strategy: {strategy}")
     
-    return result_df
+    return df_processed
 
-
-def create_polynomial_features(df: pd.DataFrame, columns: list, degree: int = 2) -> pd.DataFrame:
-    """Create polynomial features for specified columns.
+def create_lag_features(df, columns, lags=[1, 2, 3, 5, 10]):
+    """
+    Create lag features for time series data.
     
     Args:
-        df: Input DataFrame
-        columns: List of columns to create polynomial features for
-        degree: Maximum polynomial degree
+        df: DataFrame with time series data
+        columns: List of column names to create lags for
+        lags: List of lag periods
         
     Returns:
-        DataFrame with polynomial features added
+        DataFrame with lag features added
     """
-    result_df = df.copy()
+    df_lagged = df.copy()
+    
+    # Ensure DataFrame is sorted by time
+    if 'date' in df.columns:
+        df_lagged = df_lagged.sort_values('date')
     
     for col in columns:
-        if col in df.columns and df[col].dtype in ['int64', 'float64']:
-            for d in range(2, degree + 1):
-                col_name = f"{col}_pow_{d}"
-                result_df[col_name] = df[col] ** d
+        if col not in df.columns:
+            continue
+            
+        for lag in lags:
+            lag_col_name = f"{col}_lag_{lag}"
+            df_lagged[lag_col_name] = df_lagged[col].shift(lag)
     
-    return result_df
+    return df_lagged
 
-
-def create_ratio_features(df: pd.DataFrame, numerator_cols: list, denominator_cols: list) -> pd.DataFrame:
-    """Create ratio features between numerator and denominator columns.
+def create_rolling_features(df, columns, windows=[3, 5, 10], functions=['mean', 'std', 'min', 'max']):
+    """
+    Create rolling window features.
     
     Args:
-        df: Input DataFrame
-        numerator_cols: List of numerator columns
-        denominator_cols: List of denominator columns
+        df: DataFrame to process
+        columns: List of column names to create rolling features for
+        windows: List of window sizes
+        functions: List of aggregation functions
         
     Returns:
-        DataFrame with ratio features added
+        DataFrame with rolling features added
     """
-    result_df = df.copy()
+    df_rolling = df.copy()
     
-    for num_col in numerator_cols:
-        for den_col in denominator_cols:
-            if num_col in df.columns and den_col in df.columns:
-                # Avoid division by zero
-                if (df[den_col] != 0).all():
-                    col_name = f"{num_col}_div_{den_col}"
-                    result_df[col_name] = df[num_col] / df[den_col]
+    # Ensure DataFrame is sorted by time
+    if 'date' in df.columns:
+        df_rolling = df_rolling.sort_values('date')
     
-    return result_df
+    for col in columns:
+        if col not in df.columns:
+            continue
+            
+        for window in windows:
+            for func in functions:
+                if func == 'mean':
+                    df_rolling[f"{col}_rolling_mean_{window}"] = df_rolling[col].rolling(window=window, min_periods=1).mean()
+                elif func == 'std':
+                    df_rolling[f"{col}_rolling_std_{window}"] = df_rolling[col].rolling(window=window, min_periods=1).std()
+                elif func == 'min':
+                    df_rolling[f"{col}_rolling_min_{window}"] = df_rolling[col].rolling(window=window, min_periods=1).min()
+                elif func == 'max':
+                    df_rolling[f"{col}_rolling_max_{window}"] = df_rolling[col].rolling(window=window, min_periods=1).max()
+                elif func == 'sum':
+                    df_rolling[f"{col}_rolling_sum_{window}"] = df_rolling[col].rolling(window=window, min_periods=1).sum()
+    
+    return df_rolling
+
+def encode_categorical(df, columns=None, method="onehot"):
+    """
+    Encode categorical variables.
+    
+    Args:
+        df: DataFrame to process
+        columns: List of categorical column names (None = auto-detect)
+        method: Encoding method ('onehot', 'label', 'target')
+        
+    Returns:
+        DataFrame with encoded categorical variables
+    """
+    df_encoded = df.copy()
+    
+    if columns is None:
+        # Auto-detect categorical columns
+        columns = df.select_dtypes(include=['object', 'category']).columns.tolist()
+    
+    for col in columns:
+        if col not in df.columns:
+            continue
+            
+        if method == "onehot":
+            # One-hot encoding
+            dummies = pd.get_dummies(df[col], prefix=col, dummy_na=True)
+            df_encoded = pd.concat([df_encoded, dummies], axis=1)
+            df_encoded = df_encoded.drop(columns=[col])
+        elif method == "label":
+            # Label encoding
+            df_encoded[col] = df_encoded[col].astype('category').cat.codes
+        elif method == "target":
+            # Target encoding (mean encoding) - requires target variable
+            if 'target' in df.columns:
+                target_means = df.groupby(col)['target'].mean()
+                df_encoded[f"{col}_target_encoded"] = df_encoded[col].map(target_means)
+            else:
+                # Fall back to label encoding if no target
+                df_encoded[col] = df_encoded[col].astype('category').cat.codes
+        else:
+            raise ValueError(f"Unknown encoding method: {method}")
+    
+    return df_encoded
+
+def remove_outliers(df, columns=None, method="iqr", threshold=1.5):
+    """
+    Remove outliers from DataFrame.
+    
+    Args:
+        df: DataFrame to process
+        columns: List of column names to check for outliers (None = all numeric)
+        method: Outlier detection method ('iqr', 'zscore')
+        threshold: Threshold for outlier detection
+        
+    Returns:
+        DataFrame with outliers removed
+    """
+    df_clean = df.copy()
+    
+    if columns is None:
+        columns = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    outlier_mask = pd.Series([False] * len(df), index=df.index)
+    
+    for col in columns:
+        if col not in df.columns:
+            continue
+            
+        if method == "iqr":
+            Q1 = df[col].quantile(0.25)
+            Q3 = df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - threshold * IQR
+            upper_bound = Q3 + threshold * IQR
+            col_outliers = (df[col] < lower_bound) | (df[col] > upper_bound)
+        elif method == "zscore":
+            z_scores = np.abs((df[col] - df[col].mean()) / df[col].std())
+            col_outliers = z_scores > threshold
+        else:
+            raise ValueError(f"Unknown outlier detection method: {method}")
+        
+        outlier_mask = outlier_mask | col_outliers
+    
+    return df_clean[~outlier_mask]
+
+def feature_correlation_analysis(df, target_col=None, threshold=0.8):
+    """
+    Analyze feature correlations and identify highly correlated features.
+    
+    Args:
+        df: DataFrame to analyze
+        target_col: Target column name (if provided, include in analysis)
+        threshold: Correlation threshold for identifying high correlations
+        
+    Returns:
+        Dictionary with correlation analysis results
+    """
+    # Select numeric columns
+    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    if target_col and target_col in numeric_cols:
+        # Calculate correlations with target
+        target_correlations = df[numeric_cols].corrwith(df[target_col]).abs().sort_values(ascending=False)
+        target_correlations = target_correlations.drop(target_col) if target_col in target_correlations.index else target_correlations
+    else:
+        target_correlations = None
+    
+    # Calculate feature correlation matrix
+    correlation_matrix = df[numeric_cols].corr()
+    
+    # Find highly correlated feature pairs
+    high_corr_pairs = []
+    for i in range(len(correlation_matrix.columns)):
+        for j in range(i+1, len(correlation_matrix.columns)):
+            col1 = correlation_matrix.columns[i]
+            col2 = correlation_matrix.columns[j]
+            corr_value = correlation_matrix.iloc[i, j]
+            if abs(corr_value) > threshold:
+                high_corr_pairs.append({
+                    'feature1': col1,
+                    'feature2': col2,
+                    'correlation': corr_value
+                })
+    
+    # Sort by absolute correlation
+    high_corr_pairs.sort(key=lambda x: abs(x['correlation']), reverse=True)
+    
+    return {
+        'correlation_matrix': correlation_matrix,
+        'target_correlations': target_correlations,
+        'high_correlation_pairs': high_corr_pairs,
+        'threshold': threshold
+    }

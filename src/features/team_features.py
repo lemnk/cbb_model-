@@ -17,233 +17,136 @@ from datetime import datetime, timedelta
 class TeamFeatures:
     """Engineers team-level features for CBB betting analysis."""
     
-    def __init__(self, db_engine):
+    def __init__(self):
         """Initialize the team feature engineer.
         
         Args:
             db_engine: SQLAlchemy database engine
         """
-        self.engine = db_engine
+        pass
     
-    def transform(self, games_df: pd.DataFrame) -> pd.DataFrame:
+    def compute_team_efficiency(self, df):
         """
-        Compute team-level features:
-        - Offensive efficiency
-        - Defensive efficiency
-        - Pace
-        - Win streaks
-        - Strength of schedule (avg opp efficiency)
-        
-        Args:
-            games_df: DataFrame with games data
-            
-        Returns:
-            DataFrame with team features prefixed with 'team_'
+        Compute team efficiency metrics:
+        - Offensive Efficiency = Points Scored / Possessions
+        - Defensive Efficiency = Points Allowed / Possessions  
+        - Pace = Possessions per 40 minutes
         """
-        if games_df.empty:
-            return pd.DataFrame()
+        df = df.copy()
         
-        # Create a copy to avoid modifying original
-        features_df = games_df.copy()
+        # Calculate possessions (estimated from FGA, FTA, TO, OReb)
+        if 'fga' in df.columns and 'fta' in df.columns and 'turnovers' in df.columns and 'oreb' in df.columns:
+            df['possessions'] = df['fga'] + 0.44 * df['fta'] - df['oreb'] + df['turnovers']
+        else:
+            # Fallback: estimate possessions from scoring
+            df['possessions'] = df['points'] * 0.8  # Rough estimate
         
-        # Basic team performance features
-        features_df = self._add_basic_performance_features(features_df)
+        # Offensive Efficiency
+        df['offensive_efficiency'] = df['points'] / df['possessions'] * 100
         
-        # Efficiency ratings
-        features_df = self._add_efficiency_features(features_df)
+        # Defensive Efficiency (points allowed)
+        if 'points_allowed' in df.columns:
+            df['defensive_efficiency'] = df['points_allowed'] / df['possessions'] * 100
+        else:
+            # Estimate from opponent scoring
+            df['defensive_efficiency'] = df['opponent_points'] / df['possessions'] * 100
         
-        # Win streaks and trends
-        features_df = self._add_streak_features(features_df)
+        # Pace (possessions per 40 minutes)
+        if 'minutes' in df.columns:
+            df['pace'] = df['possessions'] / df['minutes'] * 40
+        else:
+            df['pace'] = df['possessions'] * 1.2  # Assume 40 minutes
         
-        # Strength of schedule
-        features_df = self._add_strength_of_schedule(features_df)
-        
-        # Rolling performance metrics
-        features_df = self._add_rolling_features(features_df)
-        
-        return features_df
-    
-    def _add_basic_performance_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add basic team performance features."""
-        # Score differential
-        df['team_home_score_diff'] = df['home_score'] - df['away_score']
-        df['team_away_score_diff'] = df['away_score'] - df['home_score']
-        
-        # Total score
-        df['team_total_score'] = df['home_score'] + df['away_score']
-        
-        # Win/loss indicators
-        df['team_home_win'] = (df['home_score'] > df['away_score']).astype(int)
-        df['team_away_win'] = (df['away_score'] > df['home_score']).astype(int)
-        
-        # Game margin
-        df['team_game_margin'] = abs(df['home_score'] - df['away_score'])
-        
-        # High scoring game indicator
-        df['team_high_scoring_game'] = (df['team_total_score'] > 150).astype(int)
-        
-        # Close game indicator
-        df['team_close_game'] = (df['team_game_margin'] <= 5).astype(int)
+        # Net Efficiency
+        df['net_efficiency'] = df['offensive_efficiency'] - df['defensive_efficiency']
         
         return df
     
-    def _add_efficiency_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add offensive and defensive efficiency features."""
-        # Simulated efficiency ratings (replace with real KenPom data)
-        np.random.seed(42)  # For reproducible demo
+    def compute_home_away_splits(self, df):
+        """
+        Compute home/away performance splits:
+        - Home Win% = Home Wins / Home Games
+        - Away Win% = Away Wins / Away Games
+        """
+        df = df.copy()
         
-        # Home team efficiency
-        df['team_home_offensive_efficiency'] = np.random.normal(110, 10, len(df))
-        df['team_home_defensive_efficiency'] = np.random.normal(100, 10, len(df))
-        df['team_home_pace'] = np.random.normal(70, 5, len(df))
+        # Ensure we have home/away indicators
+        if 'is_home' not in df.columns:
+            if 'home_team' in df.columns and 'team' in df.columns:
+                df['is_home'] = (df['team'] == df['home_team']).astype(int)
+            else:
+                df['is_home'] = np.random.choice([0, 1], len(df))
         
-        # Away team efficiency
-        df['team_away_offensive_efficiency'] = np.random.normal(110, 10, len(df))
-        df['team_away_defensive_efficiency'] = np.random.normal(100, 10, len(df))
-        df['team_away_pace'] = np.random.normal(70, 5, len(df))
+        # Calculate home/away splits
+        home_games = df[df['is_home'] == 1]
+        away_games = df[df['is_home'] == 0]
         
-        # Efficiency differentials
-        df['team_offensive_efficiency_diff'] = (
-            df['team_home_offensive_efficiency'] - df['team_away_offensive_efficiency']
-        )
-        df['team_defensive_efficiency_diff'] = (
-            df['team_home_defensive_efficiency'] - df['team_away_defensive_efficiency']
-        )
-        df['team_pace_diff'] = df['team_home_pace'] - df['team_away_pace']
+        # Home performance
+        if len(home_games) > 0:
+            home_wins = home_games['won'].sum() if 'won' in home_games.columns else 0
+            home_win_pct = home_wins / len(home_games)
+            df['home_win_pct'] = home_win_pct
+            df['home_avg_points'] = home_games['points'].mean() if 'points' in home_games.columns else 0
+        else:
+            df['home_win_pct'] = 0
+            df['home_avg_points'] = 0
         
-        # Combined efficiency metrics
-        df['team_home_efficiency_rating'] = (
-            df['team_home_offensive_efficiency'] - df['team_home_defensive_efficiency']
-        )
-        df['team_away_efficiency_rating'] = (
-            df['team_away_offensive_efficiency'] - df['team_away_defensive_efficiency']
-        )
-        df['team_efficiency_rating_diff'] = (
-            df['team_home_efficiency_rating'] - df['team_away_efficiency_rating']
-        )
+        # Away performance
+        if len(away_games) > 0:
+            away_wins = away_games['won'].sum() if 'won' in away_games.columns else 0
+            away_win_pct = away_wins / len(away_games)
+            df['away_win_pct'] = away_win_pct
+            df['away_avg_points'] = away_games['points'].mean() if 'points' in away_games.columns else 0
+        else:
+            df['away_win_pct'] = 0
+            df['away_avg_points'] = 0
         
-        # Predicted pace
-        df['team_predicted_pace'] = (df['team_home_pace'] + df['team_away_pace']) / 2
-        
-        return df
-    
-    def _add_streak_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add win streak and performance trend features."""
-        # Sort by team and date for rolling calculations
-        df = df.sort_values(['home_team', 'date'])
-        
-        # Home team win streaks
-        df['team_home_win_streak'] = df.groupby('home_team')['team_home_win'].rolling(
-            window=10, min_periods=1
-        ).sum().reset_index(0, drop=True)
-        
-        # Away team win streaks
-        df = df.sort_values(['away_team', 'date'])
-        df['team_away_win_streak'] = df.groupby('away_team')['team_away_win'].rolling(
-            window=10, min_periods=1
-        ).sum().reset_index(0, drop=True)
-        
-        # Sort back to original order
-        df = df.sort_index()
-        
-        # Win streak differential
-        df['team_win_streak_diff'] = df['team_home_win_streak'] - df['team_away_win_streak']
-        
-        # Recent performance (last 5 games)
-        df = df.sort_values(['home_team', 'date'])
-        df['team_home_recent_performance'] = df.groupby('home_team')['home_score'].rolling(
-            window=5, min_periods=1
-        ).mean().reset_index(0, drop=True)
-        
-        df = df.sort_values(['away_team', 'date'])
-        df['team_away_recent_performance'] = df.groupby('away_team')['away_score'].rolling(
-            window=5, min_periods=1
-        ).mean().reset_index(0, drop=True)
-        
-        # Sort back to original order
-        df = df.sort_index()
-        
-        # Recent performance differential
-        df['team_recent_performance_diff'] = (
-            df['team_home_recent_performance'] - df['team_away_recent_performance']
-        )
+        # Home/Away advantage
+        df['home_away_advantage'] = df['home_win_pct'] - df['away_win_pct']
         
         return df
     
-    def _add_strength_of_schedule(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add strength of schedule features."""
-        # Calculate average opponent efficiency for each team
-        # This is a simplified version - in production you'd calculate this more accurately
-        
-        # Home team strength of schedule (avg away team efficiency)
-        df['team_home_sos_offensive'] = df.groupby('home_team')['team_away_offensive_efficiency'].transform('mean')
-        df['team_home_sos_defensive'] = df.groupby('home_team')['team_away_defensive_efficiency'].transform('mean')
-        
-        # Away team strength of schedule (avg home team efficiency)
-        df['team_away_sos_offensive'] = df.groupby('away_team')['team_home_offensive_efficiency'].transform('mean')
-        df['team_away_sos_defensive'] = df.groupby('away_team')['team_home_defensive_efficiency'].transform('mean')
-        
-        # SOS differentials
-        df['team_sos_offensive_diff'] = df['team_home_sos_offensive'] - df['team_away_sos_offensive']
-        df['team_sos_defensive_diff'] = df['team_home_sos_defensive'] - df['team_away_sos_defensive']
-        
-        # Overall SOS rating
-        df['team_home_sos_rating'] = (df['team_home_sos_offensive'] + df['team_home_sos_defensive']) / 2
-        df['team_away_sos_rating'] = (df['team_away_sos_offensive'] + df['team_away_sos_defensive']) / 2
-        df['team_sos_rating_diff'] = df['team_home_sos_rating'] - df['team_away_sos_rating']
-        
-        return df
-    
-    def _add_rolling_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add rolling performance features."""
-        # Rolling windows
-        windows = [3, 5, 10]
+    def compute_consistency(self, df):
+        """
+        Compute team consistency metrics:
+        - Rolling mean & std of scoring (last N games)
+        """
+        df = df.copy()
         
         # Sort by team and date for rolling calculations
-        df = df.sort_values(['home_team', 'date'])
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values(['team', 'date'])
         
-        for window in windows:
-            # Home team rolling features
-            df[f'team_home_rolling_score_{window}'] = df.groupby('home_team')['home_score'].rolling(
-                window=window, min_periods=1
+        # Rolling scoring statistics (last 5 games)
+        if 'points' in df.columns:
+            df['scoring_rolling_mean_5'] = df.groupby('team')['points'].rolling(
+                window=5, min_periods=1
             ).mean().reset_index(0, drop=True)
             
-            df[f'team_home_rolling_conceded_{window}'] = df.groupby('home_team')['away_score'].rolling(
-                window=window, min_periods=1
-            ).mean().reset_index(0, drop=True)
+            df['scoring_rolling_std_5'] = df.groupby('team')['points'].rolling(
+                window=5, min_periods=1
+            ).std().reset_index(0, drop=True)
             
-            df[f'team_home_rolling_margin_{window}'] = df.groupby('home_team')['team_home_score_diff'].rolling(
-                window=window, min_periods=1
-            ).mean().reset_index(0, drop=True)
+            # Consistency score (lower std = more consistent)
+            df['scoring_consistency'] = 1 / (1 + df['scoring_rolling_std_5'])
         
-        # Sort by away team and date
-        df = df.sort_values(['away_team', 'date'])
-        
-        for window in windows:
-            # Away team rolling features
-            df[f'team_away_rolling_score_{window}'] = df.groupby('away_team')['away_score'].rolling(
-                window=window, min_periods=1
-            ).mean().reset_index(0, drop=True)
-            
-            df[f'team_away_rolling_conceded_{window}'] = df.groupby('away_team')['home_score'].rolling(
-                window=window, min_periods=1
-            ).mean().reset_index(0, drop=True)
-            
-            df[f'team_away_rolling_margin_{window}'] = df.groupby('away_team')['team_away_score_diff'].rolling(
-                window=window, min_periods=1
+        # Rolling win rate (last 10 games)
+        if 'won' in df.columns:
+            df['win_rate_rolling_10'] = df.groupby('team')['won'].rolling(
+                window=10, min_periods=1
             ).mean().reset_index(0, drop=True)
         
         # Sort back to original order
         df = df.sort_index()
         
-        # Rolling differentials
-        for window in windows:
-            df[f'team_rolling_score_diff_{window}'] = (
-                df[f'team_home_rolling_score_{window}'] - df[f'team_away_rolling_score_{window}']
-            )
-            
-            df[f'team_rolling_margin_diff_{window}'] = (
-                df[f'team_home_rolling_margin_{window}'] - df[f'team_away_rolling_margin_{window}']
-            )
-        
+        return df
+    
+    def transform(self, df):
+        """
+        Apply all team feature transformations
+        """
+        df = self.compute_team_efficiency(df)
+        df = self.compute_home_away_splits(df)
+        df = self.compute_consistency(df)
         return df

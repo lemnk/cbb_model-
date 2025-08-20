@@ -1,447 +1,368 @@
+#!/usr/bin/env python3
 """
-Feature Exploration Script for NCAA CBB Betting ML System (Phase 2).
+Feature Exploration Notebook for CBB Betting ML System - Phase 2
 
-This script demonstrates the feature engineering capabilities and provides
-comprehensive analysis of the generated features.
+This script demonstrates the feature engineering capabilities of the system,
+including loading sample data, running the feature pipeline, and generating
+visualizations for analysis.
 
 Usage:
     python notebooks/feature_exploration.py
-
-Requirements:
-    - Generated features CSV file (data/features_YYYYMMDD.csv)
-    - Required Python packages: pandas, numpy, matplotlib, seaborn
 """
 
+import sys
+import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from datetime import datetime
-import warnings
-import glob
-import os
-import sys
 
 # Add src to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-warnings.filterwarnings('ignore')
+from features.feature_pipeline import FeaturePipeline
+from features.feature_utils import feature_correlation_analysis, normalize, handle_missing
 
 def setup_plotting():
-    """Setup matplotlib and seaborn for plotting."""
+    """Setup matplotlib and seaborn for better visualizations."""
     plt.style.use('default')
     sns.set_palette("husl")
     plt.rcParams['figure.figsize'] = (12, 8)
-    print("✅ Plotting setup complete!")
+    plt.rcParams['font.size'] = 10
+    print("✅ Plotting setup complete")
 
-def load_features():
-    """Load the most recent features file or generate new features."""
-    # Find the most recent features file
-    features_files = glob.glob('data/features_*.csv')
+def load_sample_data():
+    """Load sample data for exploration."""
+    print("📊 Loading sample data...")
     
-    if features_files:
-        # Get the most recent file
-        latest_file = max(features_files, key=os.path.getctime)
-        print(f"📁 Loading features from: {latest_file}")
-        
-        # Load features
-        features = pd.read_csv(latest_file)
-        print(f"✅ Loaded {len(features)} rows and {len(features.columns)} columns")
-        return features
-    else:
-        print("⚠️ No features file found. Running feature pipeline to generate features...")
-        
-        # Import and run feature pipeline
-        from src.features.feature_pipeline import FeaturePipeline
-        
-        # Run pipeline
-        pipeline = FeaturePipeline()
-        features = pipeline.build_features()
-        
-        print(f"✅ Generated {len(features)} rows and {len(features.columns)} columns")
-        return features
+    # Initialize pipeline to get sample data
+    pipeline = FeaturePipeline()
+    games_df, odds_df, players_df = pipeline.load_sample_data()
+    
+    print(f"   Games: {games_df.shape}")
+    print(f"   Odds: {odds_df.shape}")
+    print(f"   Players: {players_df.shape}")
+    
+    return games_df, odds_df, players_df
 
-def explore_feature_structure(features):
-    """Explore the basic structure and content of features."""
-    print("🔍 Feature Structure Analysis")
-    print("=" * 50)
+def run_feature_pipeline(games_df, odds_df, players_df):
+    """Run the complete feature engineering pipeline."""
+    print("\n🔧 Running feature engineering pipeline...")
     
-    # Display basic information
-    print(f"Shape: {features.shape}")
-    print(f"Memory Usage: {features.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+    pipeline = FeaturePipeline()
+    features = pipeline.build_features(games_df, odds_df, players_df)
     
-    if 'date' in features.columns:
-        print(f"Date Range: {features['date'].min()} to {features['date'].max()}")
+    print(f"✅ Generated {len(features.columns)} features for {len(features)} games")
+    return features, pipeline
+
+def explore_feature_categories(features):
+    """Explore and categorize the generated features."""
+    print("\n📈 Exploring feature categories...")
     
-    if 'home_team' in features.columns:
-        print(f"Teams: {features['home_team'].nunique()} unique teams")
-    
-    print(f"Games: {len(features)} total games")
-    
-    # Analyze feature categories
-    print("\n📈 Feature Categories Breakdown")
-    print("=" * 50)
-    
+    # Categorize features
     feature_categories = {
-        'Team Features': [col for col in features.columns if col.startswith('team_')],
-        'Player Features': [col for col in features.columns if col.startswith('player_')],
-        'Market Features': [col for col in features.columns if col.startswith('market_')],
-        'Dynamic Features': [col for col in features.columns if col.startswith('dynamic_')],
-        'Base Features': [col for col in features.columns if not any(col.startswith(prefix) for prefix in ['team_', 'player_', 'market_', 'dynamic_', 'feature_'])]
+        'Team Features': [col for col in features.columns if 'team_' in col],
+        'Player Features': [col for col in features.columns if any(x in col for x in ['injury', 'foul', 'bench', 'minutes'])],
+        'Market Features': [col for col in features.columns if any(x in col for x in ['movement', 'market', 'clv', 'edge'])],
+        'Dynamic Features': [col for col in features.columns if any(x in col for x in ['streak', 'rest', 'travel', 'altitude'])],
+        'Other Features': [col for col in features.columns if not any(x in col for x in ['team_', 'injury', 'foul', 'bench', 'minutes', 'movement', 'market', 'clv', 'edge', 'streak', 'rest', 'travel', 'altitude'])]
     }
     
+    print("Feature breakdown:")
     for category, cols in feature_categories.items():
-        print(f"{category}: {len(cols)} features")
+        print(f"   {category}: {len(cols)} features")
         if cols:
-            print(f"  Sample: {', '.join(cols[:3])}{'...' if len(cols) > 3 else ''}")
-        print()
+            print(f"     Sample: {', '.join(cols[:3])}{'...' if len(cols) > 3 else ''}")
     
-    total_features = sum(len(cols) for cols in feature_categories.values())
-    print(f"Total Features: {total_features}")
+    return feature_categories
 
-def assess_data_quality(features):
-    """Assess the quality of generated features."""
-    print("🔍 Data Quality Assessment")
-    print("=" * 50)
+def analyze_feature_statistics(features):
+    """Analyze basic statistics of the features."""
+    print("\n📊 Analyzing feature statistics...")
     
-    # Missing values
-    missing_data = features.isnull().sum()
-    missing_pct = (missing_data / len(features)) * 100
-    
-    print(f"Missing Values Summary:")
-    print(f"  Total missing: {missing_data.sum()}")
-    print(f"  Missing percentage: {missing_pct.mean():.2f}%")
-    print(f"  Features with missing data: {(missing_data > 0).sum()}")
-    
-    # Display features with high missing data
-    high_missing = missing_pct[missing_pct > 10]
-    if not high_missing.empty:
-        print(f"\n⚠️ Features with >10% missing data:")
-        for col, pct in high_missing.items():
-            print(f"  {col}: {pct:.1f}%")
-    else:
-        print("\n✅ No features with >10% missing data")
-    
-    # Duplicate rows
-    duplicates = features.duplicated().sum()
-    print(f"\nDuplicate Rows: {duplicates}")
+    # Basic info
+    print(f"Dataset shape: {features.shape}")
+    print(f"Memory usage: {features.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
     
     # Data types
-    print(f"\nData Types:")
-    print(features.dtypes.value_counts())
+    dtype_counts = features.dtypes.value_counts()
+    print("\nData types:")
+    for dtype, count in dtype_counts.items():
+        print(f"   {dtype}: {count} columns")
+    
+    # Missing values
+    missing_counts = features.isnull().sum()
+    missing_pct = (missing_counts / len(features)) * 100
+    missing_summary = pd.DataFrame({
+        'Missing Count': missing_counts,
+        'Missing %': missing_pct
+    }).sort_values('Missing Count', ascending=False)
+    
+    print(f"\nMissing values summary:")
+    print(f"   Total missing: {missing_summary['Missing Count'].sum()}")
+    print(f"   Average missing %: {missing_summary['Missing %'].mean():.2f}%")
+    
+    # Show columns with missing values
+    if missing_summary['Missing Count'].sum() > 0:
+        print(f"   Columns with missing values:")
+        for col in missing_summary[missing_summary['Missing Count'] > 0].index[:5]:
+            count = missing_summary.loc[col, 'Missing Count']
+            pct = missing_summary.loc[col, 'Missing %']
+            print(f"     {col}: {count} ({pct:.1f}%)")
+    
+    return missing_summary
 
-def analyze_team_features(features):
-    """Analyze team-level features."""
-    print("🏀 Team Features Analysis")
-    print("=" * 50)
+def explore_game_strength_index(features):
+    """Explore the Game Strength Index (GSI) feature."""
+    print("\n🎯 Exploring Game Strength Index...")
     
-    # Get team features
-    team_cols = [col for col in features.columns if col.startswith('team_')]
-    team_features = features[team_cols + ['home_team', 'away_team', 'home_score', 'away_score']]
+    if 'game_strength_index' not in features.columns:
+        print("   ❌ Game Strength Index not found in features")
+        return
     
-    print(f"Team Features: {len(team_cols)} features")
-    print(f"Sample Team Features:")
-    for col in team_cols[:10]:
-        print(f"  • {col}")
+    gsi = features['game_strength_index']
     
-    # Analyze key team metrics
-    key_team_metrics = [
-        'team_home_offensive_efficiency',
-        'team_home_defensive_efficiency',
-        'team_home_pace',
-        'team_home_efficiency_rating',
-        'team_win_streak_diff'
-    ]
+    # Basic statistics
+    print(f"   Mean: {gsi.mean():.4f}")
+    print(f"   Std: {gsi.std():.4f}")
+    print(f"   Min: {gsi.min():.4f}")
+    print(f"   Max: {gsi.max():.4f}")
+    print(f"   Range: {gsi.max() - gsi.min():.4f}")
     
-    print(f"\n🔍 Key Team Metrics Summary:")
-    for metric in key_team_metrics:
-        if metric in team_features.columns:
-            print(f"{metric}:")
-            print(f"  Mean: {team_features[metric].mean():.2f}")
-            print(f"  Std: {team_features[metric].std():.2f}")
-            print(f"  Range: [{team_features[metric].min():.2f}, {team_features[metric].max():.2f}]")
-            print()
+    # Distribution
+    plt.figure(figsize=(12, 5))
+    
+    plt.subplot(1, 2, 1)
+    plt.hist(gsi, bins=20, alpha=0.7, edgecolor='black')
+    plt.title('Game Strength Index Distribution')
+    plt.xlabel('GSI Value')
+    plt.ylabel('Frequency')
+    plt.grid(True, alpha=0.3)
+    
+    plt.subplot(1, 2, 2)
+    gsi.boxplot()
+    plt.title('Game Strength Index Box Plot')
+    plt.ylabel('GSI Value')
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # GSI categories if available
+    if 'gsi_category' in features.columns:
+        gsi_cats = features['gsi_category'].value_counts()
+        print(f"\n   GSI Categories:")
+        for cat, count in gsi_cats.items():
+            pct = (count / len(features)) * 100
+            print(f"     {cat}: {count} games ({pct:.1f}%)")
 
-def analyze_player_features(features):
-    """Analyze player-level features."""
-    print("👥 Player Features Analysis")
-    print("=" * 50)
+def create_correlation_heatmap(features, max_features=20):
+    """Create a correlation heatmap for the most important features."""
+    print("\n🔥 Creating correlation heatmap...")
     
-    # Get player features
-    player_cols = [col for col in features.columns if col.startswith('player_')]
-    player_features = features[player_cols + ['home_team', 'away_team']]
-    
-    print(f"Player Features: {len(player_cols)} features")
-    print(f"Sample Player Features:")
-    for col in player_cols[:10]:
-        print(f"  • {col}")
-    
-    # Analyze key player metrics
-    key_player_metrics = [
-        'player_home_availability_pct',
-        'player_home_starters_pct',
-        'player_home_bench_utilization',
-        'player_home_star_availability_pct',
-        'player_injury_impact_diff'
-    ]
-    
-    print(f"\n🔍 Key Player Metrics Summary:")
-    for metric in key_player_metrics:
-        if metric in player_features.columns:
-            print(f"{metric}:")
-            print(f"  Mean: {player_features[metric].mean():.2f}")
-            print(f"  Std: {player_features[metric].std():.2f}")
-            print(f"  Range: [{player_features[metric].min():.2f}, {player_features[metric].max():.2f}]")
-            print()
-
-def analyze_market_features(features):
-    """Analyze market-level features."""
-    print("💰 Market Features Analysis")
-    print("=" * 50)
-    
-    # Get market features
-    market_cols = [col for col in features.columns if col.startswith('market_')]
-    market_features = features[market_cols + ['home_team', 'away_team']]
-    
-    print(f"Market Features: {len(market_cols)} features")
-    print(f"Sample Market Features:")
-    for col in market_cols[:10]:
-        print(f"  • {col}")
-    
-    # Analyze key market metrics
-    key_market_metrics = [
-        'market_spread_movement',
-        'market_total_movement',
-        'market_efficiency_score',
-        'market_volatility_score',
-        'market_clv_edge_magnitude'
-    ]
-    
-    print(f"\n🔍 Key Market Metrics Summary:")
-    for metric in key_market_metrics:
-        if metric in market_features.columns:
-            print(f"{metric}:")
-            print(f"  Mean: {market_features[metric].mean():.2f}")
-            print(f"  Std: {market_features[metric].std():.2f}")
-            print(f"  Range: [{market_features[metric].min():.2f}, {market_features[metric].max():.2f}]")
-            print()
-
-def analyze_dynamic_features(features):
-    """Analyze dynamic situational features."""
-    print("⚡ Dynamic Features Analysis")
-    print("=" * 50)
-    
-    # Get dynamic features
-    dynamic_cols = [col for col in features.columns if col.startswith('dynamic_')]
-    dynamic_features = features[dynamic_cols + ['home_team', 'away_team']]
-    
-    print(f"Dynamic Features: {len(dynamic_cols)} features")
-    print(f"Sample Dynamic Features:")
-    for col in dynamic_cols[:10]:
-        print(f"  • {col}")
-    
-    # Analyze key dynamic metrics
-    key_dynamic_metrics = [
-        'dynamic_home_travel_distance',
-        'dynamic_away_travel_distance',
-        'dynamic_rest_advantage',
-        'dynamic_home_altitude',
-        'dynamic_overall_momentum_diff'
-    ]
-    
-    print(f"\n🔍 Key Dynamic Metrics Summary:")
-    for metric in key_dynamic_metrics:
-        if metric in dynamic_features.columns:
-            print(f"{metric}:")
-            print(f"  Mean: {dynamic_features[metric].mean():.2f}")
-            print(f"  Std: {dynamic_features[metric].std():.2f}")
-            print(f"  Range: [{dynamic_features[metric].min():.2f}, {dynamic_features[metric].max():.2f}]")
-            print()
-
-def analyze_correlations(features):
-    """Analyze feature correlations."""
-    print("🔗 Feature Correlation Analysis")
-    print("=" * 50)
-    
-    # Select numeric features for correlation analysis
+    # Select numeric features
     numeric_features = features.select_dtypes(include=[np.number])
-    print(f"Numeric features for correlation: {len(numeric_features.columns)}")
+    
+    if len(numeric_features.columns) > max_features:
+        # Select features with highest variance
+        variances = numeric_features.var().sort_values(ascending=False)
+        selected_features = variances.head(max_features).index.tolist()
+        numeric_features = numeric_features[selected_features]
+        print(f"   Selected top {max_features} features by variance")
     
     # Calculate correlation matrix
-    correlation_matrix = numeric_features.corr()
+    corr_matrix = numeric_features.corr()
     
-    # Find high correlations
-    high_corr_threshold = 0.8
-    high_correlations = []
+    # Create heatmap
+    plt.figure(figsize=(14, 12))
+    mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
     
-    for i in range(len(correlation_matrix.columns)):
-        for j in range(i+1, len(correlation_matrix.columns)):
-            corr_value = correlation_matrix.iloc[i, j]
-            if abs(corr_value) > high_corr_threshold:
-                high_correlations.append((
-                    correlation_matrix.columns[i],
-                    correlation_matrix.columns[j],
-                    corr_value
-                ))
+    sns.heatmap(
+        corr_matrix, 
+        mask=mask,
+        annot=True, 
+        cmap='RdBu_r', 
+        center=0,
+        square=True,
+        fmt='.2f',
+        cbar_kws={"shrink": .8}
+    )
     
-    print(f"\n⚠️ High correlations (|r| > {high_corr_threshold}):")
-    if high_correlations:
-        for feat1, feat2, corr in high_correlations[:10]:  # Show first 10
-            print(f"  {feat1} ↔ {feat2}: {corr:.3f}")
-        if len(high_correlations) > 10:
-            print(f"  ... and {len(high_correlations) - 10} more")
+    plt.title(f'Feature Correlation Heatmap ({len(numeric_features.columns)} features)')
+    plt.tight_layout()
+    plt.show()
+    
+    # Find highly correlated features
+    high_corr_pairs = []
+    for i in range(len(corr_matrix.columns)):
+        for j in range(i+1, len(corr_matrix.columns)):
+            corr_value = corr_matrix.iloc[i, j]
+            if abs(corr_value) > 0.8:
+                high_corr_pairs.append({
+                    'feature1': corr_matrix.columns[i],
+                    'feature2': corr_matrix.columns[j],
+                    'correlation': corr_value
+                })
+    
+    if high_corr_pairs:
+        print(f"   High correlation pairs (|r| > 0.8):")
+        for pair in sorted(high_corr_pairs, key=lambda x: abs(x['correlation']), reverse=True)[:5]:
+            print(f"     {pair['feature1']} ↔ {pair['feature2']}: {pair['correlation']:.3f}")
     else:
-        print("  ✅ No high correlations found")
+        print(f"   No highly correlated features found (|r| > 0.8)")
+
+def explore_feature_relationships(features):
+    """Explore relationships between key features."""
+    print("\n🔍 Exploring feature relationships...")
+    
+    # Select some key features for analysis
+    key_features = []
+    for prefix in ['team_', 'injury_', 'spread_', 'streak_']:
+        cols = [col for col in features.columns if col.startswith(prefix)]
+        if cols:
+            key_features.extend(cols[:2])  # Take first 2 from each category
+    
+    if len(key_features) < 4:
+        # Fallback to first few numeric columns
+        numeric_cols = features.select_dtypes(include=[np.number]).columns[:8]
+        key_features = numeric_cols.tolist()
+    
+    print(f"   Analyzing relationships between: {', '.join(key_features[:6])}")
+    
+    # Create pairplot for key features
+    try:
+        plot_data = features[key_features[:6]].copy()
+        plot_data = handle_missing(plot_data, strategy="zero")
+        
+        plt.figure(figsize=(15, 10))
+        sns.pairplot(plot_data, diag_kind='kde')
+        plt.suptitle('Feature Relationships Pairplot', y=1.02)
+        plt.show()
+        
+    except Exception as e:
+        print(f"   ⚠️ Could not create pairplot: {e}")
+        # Fallback to correlation matrix
+        corr_subset = features[key_features[:6]].corr()
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(corr_subset, annot=True, cmap='RdBu_r', center=0)
+        plt.title('Key Features Correlation Matrix')
+        plt.tight_layout()
+        plt.show()
 
 def analyze_feature_importance(features):
-    """Analyze feature importance for prediction."""
-    print("📈 Feature Importance Analysis")
-    print("=" * 50)
+    """Analyze feature importance using correlation with GSI."""
+    print("\n⭐ Analyzing feature importance...")
     
-    # Create target variable (home team win)
-    if 'home_score' in features.columns and 'away_score' in features.columns:
-        features['home_win'] = (features['home_score'] > features['away_score']).astype(int)
-        print(f"✅ Created target variable 'home_win': {features['home_win'].mean():.3f} win rate")
-    else:
-        print("⚠️ Could not create target variable - missing score columns")
-        features['home_win'] = np.random.choice([0, 1], len(features))  # Placeholder
+    if 'game_strength_index' not in features.columns:
+        print("   ❌ Game Strength Index not found for importance analysis")
+        return
     
-    # Calculate feature importance using correlation with target
-    if 'home_win' in features.columns:
-        numeric_features_with_target = features.select_dtypes(include=[np.number])
-        
-        # Calculate correlations with target
-        target_correlations = numeric_features_with_target.corr()['home_win'].abs().sort_values(ascending=False)
-        
-        print(f"\n🔍 Top 15 Features by Correlation with Home Win:")
-        for i, (feature, corr) in enumerate(target_correlations.head(15).items()):
-            if feature != 'home_win':
-                print(f"  {i+1:2d}. {feature}: {corr:.3f}")
+    # Get numeric features excluding GSI
+    numeric_features = features.select_dtypes(include=[np.number])
+    if 'game_strength_index' in numeric_features.columns:
+        numeric_features = numeric_features.drop(columns=['game_strength_index'])
+    
+    # Calculate correlations with GSI
+    gsi_correlations = numeric_features.corrwith(features['game_strength_index']).abs().sort_values(ascending=False)
+    
+    # Top features
+    print(f"   Top 10 features correlated with GSI:")
+    for i, (feature, corr) in enumerate(gsi_correlations.head(10).items()):
+        print(f"     {i+1:2d}. {feature}: {corr:.4f}")
+    
+    # Create feature importance plot
+    plt.figure(figsize=(12, 8))
+    top_features = gsi_correlations.head(15)
+    
+    plt.barh(range(len(top_features)), top_features.values)
+    plt.yticks(range(len(top_features)), top_features.index)
+    plt.xlabel('Absolute Correlation with GSI')
+    plt.title('Top 15 Features by Correlation with Game Strength Index')
+    plt.grid(True, alpha=0.3)
+    
+    # Add correlation values as text
+    for i, (feature, corr) in enumerate(top_features.items()):
+        plt.text(corr + 0.01, i, f'{corr:.3f}', va='center')
+    
+    plt.tight_layout()
+    plt.show()
 
-def assess_feature_quality(features):
-    """Assess overall feature quality for machine learning."""
-    print("🎯 Feature Quality Assessment")
-    print("=" * 50)
+def save_exploration_results(features, output_dir="data"):
+    """Save exploration results and sample data."""
+    print("\n💾 Saving exploration results...")
     
-    # Overall statistics
-    print(f"📊 Overall Feature Statistics:")
-    print(f"  Total Features: {len(features.columns)}")
-    print(f"  Total Rows: {len(features)}")
-    print(f"  Memory Usage: {features.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
-    print(f"  Missing Data: {features.isnull().sum().sum()} total missing values")
-    print(f"  Missing Percentage: {(features.isnull().sum().sum() / (len(features) * len(features.columns))) * 100:.2f}%")
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
     
-    # Feature type distribution
-    print(f"\n📈 Feature Type Distribution:")
-    feature_types = features.dtypes.value_counts()
-    for dtype, count in feature_types.items():
-        print(f"  {dtype}: {count} features")
+    # Save sample features
+    sample_file = os.path.join(output_dir, "feature_exploration_sample.csv")
+    features.head(50).to_csv(sample_file, index=False)
+    print(f"   Sample features saved to: {sample_file}")
     
-    # Feature category distribution
-    print(f"\n🏷️ Feature Category Distribution:")
-    categories = {
-        'Team': len([col for col in features.columns if col.startswith('team_')]),
-        'Player': len([col for col in features.columns if col.startswith('player_')]),
-        'Market': len([col for col in features.columns if col.startswith('market_')]),
-        'Dynamic': len([col for col in features.columns if col.startswith('dynamic_')]),
-        'Base': len([col for col in features.columns if not any(col.startswith(prefix) for prefix in ['team_', 'player_', 'market_', 'dynamic_', 'feature_'])])
-    }
+    # Save feature summary
+    summary_file = os.path.join(output_dir, "feature_exploration_summary.txt")
+    with open(summary_file, 'w') as f:
+        f.write("Feature Exploration Summary\n")
+        f.write("=" * 50 + "\n\n")
+        f.write(f"Total features: {len(features.columns)}\n")
+        f.write(f"Total games: {len(features)}\n")
+        f.write(f"Dataset shape: {features.shape}\n\n")
+        
+        # Feature categories
+        feature_categories = {
+            'Team Features': [col for col in features.columns if 'team_' in col],
+            'Player Features': [col for col in features.columns if any(x in col for x in ['injury', 'foul', 'bench', 'minutes'])],
+            'Market Features': [col for col in features.columns if any(x in col for x in ['movement', 'market', 'clv', 'edge'])],
+            'Dynamic Features': [col for col in features.columns if any(x in col for x in ['streak', 'rest', 'travel', 'altitude'])]
+        }
+        
+        for category, cols in feature_categories.items():
+            f.write(f"{category}: {len(cols)} features\n")
+        
+        f.write(f"\nColumns:\n")
+        for col in features.columns:
+            f.write(f"  {col}\n")
     
-    for category, count in categories.items():
-        print(f"  {category}: {count} features")
-    
-    # Data quality score
-    missing_pct = (features.isnull().sum().sum() / (len(features) * len(features.columns))) * 100
-    duplicate_pct = (features.duplicated().sum() / len(features)) * 100
-    
-    quality_score = 100 - (missing_pct * 0.5) - (duplicate_pct * 0.3)
-    quality_score = max(0, min(100, quality_score))
-    
-    print(f"\n🏆 Feature Quality Score: {quality_score:.1f}/100")
-    
-    if quality_score >= 90:
-        print("  🎉 Excellent quality! Ready for ML training.")
-    elif quality_score >= 80:
-        print("  ✅ Good quality. Minor improvements recommended.")
-    elif quality_score >= 70:
-        print("  ⚠️ Acceptable quality. Some improvements needed.")
-    else:
-        print("  ❌ Poor quality. Significant improvements required.")
-
-def provide_recommendations():
-    """Provide recommendations for Phase 3."""
-    print("🚀 Next Steps & Recommendations for Phase 3")
-    print("=" * 60)
-    
-    print("\n📋 Feature Engineering Status:")
-    print("  ✅ 165+ features generated across 4 categories")
-    print("  ✅ Feature pipeline functional and tested")
-    print("  ✅ Data quality assessment completed")
-    print("  ✅ Feature correlations analyzed")
-    print("  ✅ Feature importance identified")
-    
-    print("\n🎯 Recommendations for Phase 3:")
-    print("\n1. Feature Selection:")
-    print("   • Remove highly correlated features (>0.8 correlation)")
-    print("   • Focus on top 50-75 most predictive features")
-    print("   • Consider feature groups by category")
-    
-    print("\n2. Data Preprocessing:")
-    print("   • Handle remaining missing values")
-    print("   • Scale/normalize numeric features")
-    print("   • Encode categorical features")
-    print("   • Create train/validation/test splits")
-    
-    print("\n3. Model Development:")
-    print("   • Start with baseline models (logistic regression, random forest)")
-    print("   • Implement advanced models (XGBoost, neural networks)")
-    print("   • Use temporal cross-validation")
-    print("   • Focus on betting-specific metrics (ROI, win rate)")
-    
-    print("\n4. Feature Engineering Improvements:")
-    print("   • Add interaction features between key variables")
-    print("   • Implement feature selection algorithms")
-    print("   • Add domain-specific features (conference strength, etc.)")
-    print("   • Consider feature importance-based selection")
-    
-    print("\n🎉 Phase 2 Complete! Ready for Phase 3: Model Training!")
-    print("=" * 60)
+    print(f"   Summary saved to: {summary_file}")
 
 def main():
-    """Main function to run the feature exploration analysis."""
-    print("🔍 NCAA CBB Betting ML System - Feature Exploration")
-    print("=" * 60)
-    print("Phase 2: Feature Engineering Analysis")
+    """Main exploration function."""
+    print("🚀 CBB Betting ML System - Feature Exploration")
     print("=" * 60)
     
     try:
         # Setup
         setup_plotting()
         
-        # Load features
-        features = load_features()
+        # Load data
+        games_df, odds_df, players_df = load_sample_data()
         
-        if features.empty:
-            print("❌ No features loaded. Exiting.")
-            return
+        # Run feature pipeline
+        features, pipeline = run_feature_pipeline(games_df, odds_df, players_df)
         
-        # Run analysis
-        explore_feature_structure(features)
-        assess_data_quality(features)
-        analyze_team_features(features)
-        analyze_player_features(features)
-        analyze_market_features(features)
-        analyze_dynamic_features(features)
-        analyze_correlations(features)
+        # Explore features
+        feature_categories = explore_feature_categories(features)
+        
+        # Analyze statistics
+        missing_summary = analyze_feature_statistics(features)
+        
+        # Explore GSI
+        explore_game_strength_index(features)
+        
+        # Create visualizations
+        create_correlation_heatmap(features)
+        explore_feature_relationships(features)
         analyze_feature_importance(features)
-        assess_feature_quality(features)
-        provide_recommendations()
         
-        print("\n🎯 Feature exploration analysis complete!")
-        print("📊 Features are ready for Phase 3: Model Training!")
+        # Save results
+        save_exploration_results(features)
+        
+        print("\n✅ Feature exploration complete!")
+        print(f"📊 Generated {len(features.columns)} features for {len(features)} games")
+        print("📁 Results saved to data/ directory")
         
     except Exception as e:
-        print(f"\n💥 Error during feature exploration: {e}")
+        print(f"\n❌ Error during feature exploration: {e}")
         import traceback
         traceback.print_exc()
 

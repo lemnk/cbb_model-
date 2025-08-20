@@ -1,28 +1,27 @@
 #!/usr/bin/env python3
 """
-Simple test script for Phase 2 feature engineering system.
-Tests file structure and basic imports without requiring external packages.
+Test script for Phase 2: Feature Engineering
+Verifies that all required files are created and can be imported.
 """
 
 import os
 import sys
+import importlib
 
 def test_file_structure():
     """Test that all required Phase 2 files exist."""
-    print("🔍 Testing Phase 2 File Structure")
-    print("=" * 50)
+    print("🔍 Testing Phase 2 file structure...")
     
-    # Required files and directories
     required_files = [
-        'src/features/__init__.py',
-        'src/features/team_features.py',
-        'src/features/player_features.py',
-        'src/features/market_features.py',
-        'src/features/dynamic_features.py',
-        'src/features/feature_utils.py',
-        'src/features/feature_pipeline.py',
-        'notebooks/feature_exploration.py',
-        'PHASE2_SUMMARY.md'
+        "src/features/__init__.py",
+        "src/features/team_features.py",
+        "src/features/player_features.py",
+        "src/features/dynamic_features.py",
+        "src/features/market_features.py",
+        "src/features/feature_utils.py",
+        "src/features/feature_pipeline.py",
+        "PHASE2_SUMMARY.md",
+        "notebooks/feature_exploration.py"
     ]
     
     missing_files = []
@@ -31,201 +30,201 @@ def test_file_structure():
     for file_path in required_files:
         if os.path.exists(file_path):
             existing_files.append(file_path)
-            print(f"✅ {file_path}")
+            print(f"   ✅ {file_path}")
         else:
             missing_files.append(file_path)
-            print(f"❌ {file_path}")
+            print(f"   ❌ {file_path}")
     
     print(f"\n📊 File Structure Summary:")
-    print(f"  ✅ Existing: {len(existing_files)}")
-    print(f"  ❌ Missing: {len(missing_files)}")
-    print(f"  📈 Success Rate: {len(existing_files) / len(required_files) * 100:.1f}%")
+    print(f"   Existing: {len(existing_files)}/{len(required_files)}")
+    print(f"   Missing: {len(missing_files)}")
     
-    return len(missing_files) == 0
+    if missing_files:
+        print(f"\n❌ Missing files:")
+        for file_path in missing_files:
+            print(f"   {file_path}")
+        return False
+    else:
+        print(f"\n✅ All required files exist!")
+        return True
 
-def test_basic_imports():
-    """Test basic Python syntax and imports."""
-    print("\n🔍 Testing Basic Imports and Syntax")
-    print("=" * 50)
+def test_imports():
+    """Test that all Phase 2 modules can be imported."""
+    print("\n🔧 Testing Phase 2 imports...")
     
-    # Test Python syntax by importing modules
-    try:
-        # Test __init__.py
-        with open('src/features/__init__.py', 'r') as f:
-            content = f.read()
-        print("✅ src/features/__init__.py - Syntax OK")
-    except Exception as e:
-        print(f"❌ src/features/__init__.py - Error: {e}")
-        return False
+    # Add src to path
+    sys.path.append('src')
     
-    try:
-        # Test team_features.py
-        with open('src/features/team_features.py', 'r') as f:
-            content = f.read()
-        print("✅ src/features/team_features.py - Syntax OK")
-    except Exception as e:
-        print(f"❌ src/features/team_features.py - Error: {e}")
-        return False
-    
-    try:
-        # Test player_features.py
-        with open('src/features/player_features.py', 'r') as f:
-            content = f.read()
-        print("✅ src/features/player_features.py - Syntax OK")
-    except Exception as e:
-        print(f"❌ src/features/player_features.py - Error: {e}")
-        return False
-    
-    try:
-        # Test market_features.py
-        with open('src/features/market_features.py', 'r') as f:
-            content = f.read()
-        print("✅ src/features/market_features.py - Syntax OK")
-    except Exception as e:
-        print(f"❌ src/features/market_features.py - Error: {e}")
-        return False
-    
-    try:
-        # Test dynamic_features.py
-        with open('src/features/dynamic_features.py', 'r') as f:
-            content = f.read()
-        print("✅ src/features/dynamic_features.py - Syntax OK")
-    except Exception as e:
-        print(f"❌ src/features/dynamic_features.py - Error: {e}")
-        return False
-    
-    try:
-        # Test feature_utils.py
-        with open('src/features/feature_utils.py', 'r') as f:
-            content = f.read()
-        print("✅ src/features/feature_utils.py - Syntax OK")
-    except Exception as e:
-        print(f"❌ src/features/feature_utils.py - Error: {e}")
-        return False
-    
-    try:
-        # Test feature_pipeline.py
-        with open('src/features/feature_pipeline.py', 'r') as f:
-            content = f.read()
-        print("✅ src/features/feature_pipeline.py - Syntax OK")
-    except Exception as e:
-        print(f"❌ src/features/feature_pipeline.py - Error: {e}")
-        return False
-    
-    return True
-
-def test_feature_counts():
-    """Test that feature files contain expected content."""
-    print("\n🔍 Testing Feature Content")
-    print("=" * 50)
-    
-    # Check for key class definitions
-    key_classes = [
-        ('src/features/team_features.py', 'class TeamFeatures'),
-        ('src/features/player_features.py', 'class PlayerFeatures'),
-        ('src/features/market_features.py', 'class MarketFeatures'),
-        ('src/features/dynamic_features.py', 'class DynamicFeatures'),
-        ('src/features/feature_pipeline.py', 'class FeaturePipeline'),
-        ('src/features/feature_utils.py', 'class FeatureUtils')
+    modules_to_test = [
+        "features.team_features",
+        "features.player_features", 
+        "features.dynamic_features",
+        "features.market_features",
+        "features.feature_utils",
+        "features.feature_pipeline"
     ]
     
-    for file_path, class_name in key_classes:
-        try:
-            with open(file_path, 'r') as f:
-                content = f.read()
-                if class_name in content:
-                    print(f"✅ {file_path} - Contains {class_name}")
-                else:
-                    print(f"❌ {file_path} - Missing {class_name}")
-        except Exception as e:
-            print(f"❌ {file_path} - Error reading: {e}")
+    failed_imports = []
+    successful_imports = []
     
-    # Check for transform methods
-    transform_methods = [
-        ('src/features/team_features.py', 'def transform'),
-        ('src/features/player_features.py', 'def transform'),
-        ('src/features/market_features.py', 'def transform'),
-        ('src/features/dynamic_features.py', 'def transform')
-    ]
-    
-    for file_path, method_name in transform_methods:
+    for module_name in modules_to_test:
         try:
-            with open(file_path, 'r') as f:
-                content = f.read()
-                if method_name in content:
-                    print(f"✅ {file_path} - Contains {method_name}")
-                else:
-                    print(f"❌ {file_path} - Missing {method_name}")
+            module = importlib.import_module(module_name)
+            successful_imports.append(module_name)
+            print(f"   ✅ {module_name}")
         except Exception as e:
-            print(f"❌ {file_path} - Error reading: {e}")
+            failed_imports.append((module_name, str(e)))
+            print(f"   ❌ {module_name}: {e}")
+    
+    print(f"\n📊 Import Summary:")
+    print(f"   Successful: {len(successful_imports)}/{len(modules_to_test)}")
+    print(f"   Failed: {len(failed_imports)}")
+    
+    if failed_imports:
+        print(f"\n❌ Failed imports:")
+        for module_name, error in failed_imports:
+            print(f"   {module_name}: {error}")
+        return False
+    else:
+        print(f"\n✅ All modules imported successfully!")
+        return True
 
-def test_documentation():
-    """Test that documentation files exist and contain content."""
-    print("\n🔍 Testing Documentation")
-    print("=" * 50)
+def test_class_instantiation():
+    """Test that all feature classes can be instantiated."""
+    print("\n🏗️ Testing class instantiation...")
     
-    # Check PHASE2_SUMMARY.md
-    if os.path.exists('PHASE2_SUMMARY.md'):
-        try:
-            with open('PHASE2_SUMMARY.md', 'r') as f:
-                content = f.read()
-                if len(content) > 1000:  # Should be substantial
-                    print("✅ PHASE2_SUMMARY.md - Contains substantial content")
-                else:
-                    print("⚠️ PHASE2_SUMMARY.md - Content seems minimal")
-        except Exception as e:
-            print(f"❌ PHASE2_SUMMARY.md - Error reading: {e}")
-    else:
-        print("❌ PHASE2_SUMMARY.md - File missing")
+    try:
+        from features.team_features import TeamFeatures
+        from features.player_features import PlayerFeatures
+        from features.dynamic_features import DynamicFeatures
+        from features.market_features import MarketFeatures
+        from features.feature_pipeline import FeaturePipeline
+        
+        # Test instantiation
+        team_features = TeamFeatures()
+        player_features = PlayerFeatures()
+        dynamic_features = DynamicFeatures()
+        market_features = MarketFeatures()
+        feature_pipeline = FeaturePipeline()
+        
+        print("   ✅ All feature classes instantiated successfully")
+        return True
+        
+    except Exception as e:
+        print(f"   ❌ Class instantiation failed: {e}")
+        return False
+
+def test_feature_pipeline():
+    """Test basic feature pipeline functionality."""
+    print("\n🚀 Testing feature pipeline...")
     
-    # Check feature exploration script
-    if os.path.exists('notebooks/feature_exploration.py'):
-        try:
-            with open('notebooks/feature_exploration.py', 'r') as f:
-                content = f.read()
-                if len(content) > 500:  # Should be substantial
-                    print("✅ notebooks/feature_exploration.py - Contains substantial content")
-                else:
-                    print("⚠️ notebooks/feature_exploration.py - Content seems minimal")
-        except Exception as e:
-            print(f"❌ notebooks/feature_exploration.py - Error reading: {e}")
-    else:
-        print("❌ notebooks/feature_exploration.py - File missing")
+    try:
+        from features.feature_pipeline import FeaturePipeline
+        
+        # Initialize pipeline
+        pipeline = FeaturePipeline()
+        print("   ✅ Pipeline initialized")
+        
+        # Test sample data loading
+        games_df, odds_df, players_df = pipeline.load_sample_data()
+        print(f"   ✅ Sample data loaded: Games={games_df.shape}, Odds={odds_df.shape}, Players={players_df.shape}")
+        
+        # Test feature building (with small sample)
+        sample_games = games_df.head(10)
+        sample_odds = odds_df.head(10)
+        sample_players = players_df.head(20)
+        
+        features = pipeline.build_features(sample_games, sample_odds, sample_players)
+        print(f"   ✅ Features built: {features.shape}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"   ❌ Feature pipeline test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def test_feature_utils():
+    """Test feature utility functions."""
+    print("\n🛠️ Testing feature utilities...")
+    
+    try:
+        import pandas as pd
+        import numpy as np
+        from features.feature_utils import normalize, scale, handle_missing
+        
+        # Create test data
+        test_df = pd.DataFrame({
+            'numeric': [1, 2, 3, 4, 5],
+            'with_nulls': [1, np.nan, 3, np.nan, 5],
+            'categorical': ['A', 'B', 'A', 'B', 'A']
+        })
+        
+        # Test normalize
+        normalized = normalize(test_df['numeric'], method="minmax")
+        print("   ✅ normalize function works")
+        
+        # Test scale
+        scaled = scale(test_df, columns=['numeric'], method="zscore")
+        print("   ✅ scale function works")
+        
+        # Test handle_missing
+        cleaned = handle_missing(test_df, strategy="zero")
+        print("   ✅ handle_missing function works")
+        
+        return True
+        
+    except Exception as e:
+        print(f"   ❌ Feature utilities test failed: {e}")
+        return False
 
 def main():
     """Run all Phase 2 tests."""
-    print("🏀 NCAA CBB Betting ML System - Phase 2 Testing")
-    print("=" * 60)
-    print("Testing Feature Engineering Implementation")
+    print("🧪 Phase 2: Feature Engineering - System Test")
     print("=" * 60)
     
-    # Run tests
-    file_structure_ok = test_file_structure()
-    basic_imports_ok = test_basic_imports()
+    tests = [
+        ("File Structure", test_file_structure),
+        ("Module Imports", test_imports),
+        ("Class Instantiation", test_class_instantiation),
+        ("Feature Pipeline", test_feature_pipeline),
+        ("Feature Utilities", test_feature_utils)
+    ]
     
-    # Additional tests
-    test_feature_counts()
-    test_documentation()
+    results = []
+    
+    for test_name, test_func in tests:
+        print(f"\n{'='*20} {test_name} {'='*20}")
+        try:
+            result = test_func()
+            results.append((test_name, result))
+        except Exception as e:
+            print(f"   💥 Test crashed: {e}")
+            results.append((test_name, False))
     
     # Summary
-    print("\n" + "=" * 60)
-    print("🎯 PHASE 2 TESTING SUMMARY")
+    print(f"\n{'='*60}")
+    print("📊 PHASE 2 TEST SUMMARY")
     print("=" * 60)
     
-    if file_structure_ok and basic_imports_ok:
-        print("✅ Phase 2 Implementation: SUCCESS")
-        print("✅ All required files present and syntactically correct")
-        print("✅ Feature engineering system ready for testing")
-        print("\n🚀 Next Steps:")
-        print("   1. Install dependencies: pip install -r requirements.txt")
-        print("   2. Test feature pipeline: python -m src.features.feature_pipeline")
-        print("   3. Run feature exploration: python notebooks/feature_exploration.py")
+    passed = sum(1 for _, result in results if result)
+    total = len(results)
+    
+    for test_name, result in results:
+        status = "✅ PASS" if result else "❌ FAIL"
+        print(f"   {test_name}: {status}")
+    
+    print(f"\nOverall: {passed}/{total} tests passed")
+    
+    if passed == total:
+        print("\n🎉 Phase 2 is ready for use!")
+        print("🚀 All feature engineering components are working correctly.")
     else:
-        print("❌ Phase 2 Implementation: ISSUES FOUND")
-        print("❌ Some required files missing or have syntax errors")
-        print("\n🔧 Please fix the issues above before proceeding")
+        print(f"\n⚠️ {total - passed} tests failed. Please check the errors above.")
     
-    print("=" * 60)
+    return passed == total
 
 if __name__ == "__main__":
-    main()
+    success = main()
+    sys.exit(0 if success else 1)

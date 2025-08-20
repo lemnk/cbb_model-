@@ -10,238 +10,139 @@ This module handles player-level feature engineering including:
 
 import pandas as pd
 import numpy as np
-from sqlalchemy import create_engine
-from datetime import datetime, timedelta
-
 
 class PlayerFeatures:
-    """Engineers player-level features for CBB betting analysis."""
+    def __init__(self):
+        pass
     
-    def __init__(self, db_engine):
-        """Initialize the player feature engineer.
-        
-        Args:
-            db_engine: SQLAlchemy database engine
+    def compute_injury_flags(self, players_df):
         """
-        self.engine = db_engine
-    
-    def transform(self, games_df: pd.DataFrame) -> pd.DataFrame:
+        Compute injury-related features:
+        - Binary indicator for injured/missing
         """
-        Player-level features:
-        - Injury flags
-        - Minutes distribution (bench depth)
-        - Star player impact rating
+        df = players_df.copy()
         
-        Args:
-            games_df: DataFrame with games data
-            
-        Returns:
-            DataFrame with player features prefixed with 'player_'
-        """
-        if games_df.empty:
-            return pd.DataFrame()
+        # Ensure we have injury indicators
+        if 'injured' not in df.columns:
+            if 'status' in df.columns:
+                df['injured'] = df['status'].str.contains('injured|out|questionable', case=False, na=False).astype(int)
+            else:
+                df['injured'] = np.random.choice([0, 1], len(df), p=[0.9, 0.1])
         
-        # Create a copy to avoid modifying original
-        features_df = games_df.copy()
+        # Injury severity (if available)
+        if 'injury_severity' in df.columns:
+            df['injury_severity_score'] = df['injury_severity'].map({
+                'questionable': 0.3,
+                'doubtful': 0.6,
+                'out': 1.0
+            }).fillna(0)
+        else:
+            df['injury_severity_score'] = df['injured']
         
-        # Add player availability features
-        features_df = self._add_availability_features(features_df)
+        # Days since injury (if available)
+        if 'days_since_injury' in df.columns:
+            df['injury_recency'] = np.exp(-df['days_since_injury'] / 7)  # Decay factor
+        else:
+            df['injury_recency'] = df['injured'] * 0.5
         
-        # Add injury and health features
-        features_df = self._add_injury_features(features_df)
-        
-        # Add lineup and rotation features
-        features_df = self._add_lineup_features(features_df)
-        
-        # Add foul trouble features
-        features_df = self._add_foul_features(features_df)
-        
-        # Add bench utilization features
-        features_df = self._add_bench_features(features_df)
-        
-        # Add star player impact features
-        features_df = self._add_star_player_features(features_df)
-        
-        return features_df
-    
-    def _add_availability_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add basic player availability features."""
-        # Simulated player availability data (replace with real injury database)
-        np.random.seed(42)  # For reproducible demo
-        
-        # Home team player availability
-        df['player_home_available_count'] = np.random.randint(10, 15, len(df))
-        df['player_home_injured_count'] = np.random.randint(0, 3, len(df))
-        df['player_home_suspended_count'] = np.random.randint(0, 2, len(df))
-        
-        # Away team player availability
-        df['player_away_available_count'] = np.random.randint(10, 15, len(df))
-        df['player_away_injured_count'] = np.random.randint(0, 3, len(df))
-        df['player_away_suspended_count'] = np.random.randint(0, 2, len(df))
-        
-        # Total roster counts
-        df['player_home_total_roster'] = df['player_home_available_count'] + df['player_home_injured_count'] + df['player_home_suspended_count']
-        df['player_away_total_roster'] = df['player_away_available_count'] + df['player_away_injured_count'] + df['player_away_suspended_count']
-        
-        # Availability percentages
-        df['player_home_availability_pct'] = df['player_home_available_count'] / df['player_home_total_roster']
-        df['player_away_availability_pct'] = df['player_away_available_count'] / df['player_away_total_roster']
-        
-        # Availability differential
-        df['player_availability_diff'] = df['player_home_availability_pct'] - df['player_away_availability_pct']
-        
-        # Critical availability indicators
-        df['player_home_critical_shortage'] = (df['player_home_available_count'] <= 8).astype(int)
-        df['player_away_critical_shortage'] = (df['player_away_available_count'] <= 8).astype(int)
+        # Overall injury impact
+        df['injury_impact'] = df['injury_severity_score'] * df['injury_recency']
         
         return df
     
-    def _add_injury_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add injury and health-related features."""
-        # Injury severity indicators
-        df['player_home_minor_injuries'] = np.random.randint(0, 2, len(df))
-        df['player_home_major_injuries'] = np.random.randint(0, 1, len(df))
-        df['player_away_minor_injuries'] = np.random.randint(0, 2, len(df))
-        df['player_away_major_injuries'] = np.random.randint(0, 1, len(df))
+    def compute_foul_trouble(self, players_df):
+        """
+        Compute foul trouble metrics:
+        - Foul Rate = Fouls / Minutes
+        - Projected Minutes Lost = FoulRate * Avg Minutes
+        """
+        df = players_df.copy()
         
-        # Injury impact scores (weighted by severity)
-        df['player_home_injury_impact'] = (
-            df['player_home_minor_injuries'] * 0.3 + 
-            df['player_home_major_injuries'] * 0.7
-        )
-        df['player_away_injury_impact'] = (
-            df['player_away_minor_injuries'] * 0.3 + 
-            df['player_away_major_injuries'] * 0.7
-        )
+        # Calculate foul rate
+        if 'fouls' in df.columns and 'minutes' in df.columns:
+            df['foul_rate'] = df['fouls'] / df['minutes'].clip(lower=1)
+        elif 'fouls' in df.columns:
+            df['foul_rate'] = df['fouls'] / 40  # Assume 40 minutes
+        else:
+            df['foul_rate'] = np.random.exponential(0.1, len(df))
         
-        # Injury differential
-        df['player_injury_impact_diff'] = df['player_home_injury_impact'] - df['player_away_injury_impact']
-        
-        # Return from injury indicators
-        df['player_home_returning_players'] = np.random.randint(0, 2, len(df))
-        df['player_away_returning_players'] = np.random.randint(0, 2, len(df))
-        
-        # Fresh injury indicators
-        df['player_home_fresh_injuries'] = np.random.randint(0, 2, len(df))
-        df['player_away_fresh_injuries'] = np.random.randint(0, 2, len(df))
-        
-        return df
-    
-    def _add_lineup_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add lineup and rotation features."""
-        # Starting lineup consistency
-        df['player_home_starters_available'] = np.random.randint(4, 6, len(df))
-        df['player_away_starters_available'] = np.random.randint(4, 6, len(df))
-        
-        # Starting lineup availability percentage
-        df['player_home_starters_pct'] = df['player_home_starters_available'] / 5.0
-        df['player_away_starters_pct'] = df['player_away_starters_available'] / 5.0
-        
-        # Starting lineup differential
-        df['player_starters_diff'] = df['player_home_starters_pct'] - df['player_away_starters_pct']
-        
-        # Rotation depth indicators
-        df['player_home_rotation_depth'] = np.random.randint(7, 12, len(df))
-        df['player_away_rotation_depth'] = np.random.randint(7, 12, len(df))
-        
-        # Rotation depth differential
-        df['player_rotation_depth_diff'] = df['player_home_rotation_depth'] - df['player_away_rotation_depth']
-        
-        # Experience level indicators
-        df['player_home_experience_years'] = np.random.normal(2.5, 0.8, len(df))
-        df['player_away_experience_years'] = np.random.normal(2.5, 0.8, len(df))
-        
-        # Experience differential
-        df['player_experience_diff'] = df['player_home_experience_years'] - df['player_away_experience_years']
-        
-        return df
-    
-    def _add_foul_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add foul trouble and discipline features."""
         # Foul trouble indicators
-        df['player_home_foul_trouble_count'] = np.random.randint(0, 3, len(df))
-        df['player_away_foul_trouble_count'] = np.random.randint(0, 3, len(df))
+        df['foul_trouble_3'] = (df['foul_rate'] > 0.075).astype(int)  # 3+ fouls in 40 min
+        df['foul_trouble_4'] = (df['foul_rate'] > 0.1).astype(int)    # 4+ fouls in 40 min
+        df['foul_trouble_5'] = (df['foul_rate'] > 0.125).astype(int)  # 5+ fouls in 40 min
         
-        # Foul trouble differential
-        df['player_foul_trouble_diff'] = df['player_home_foul_trouble_count'] - df['player_away_foul_trouble_count']
+        # Projected minutes lost due to fouls
+        if 'avg_minutes' in df.columns:
+            df['projected_minutes_lost'] = df['foul_rate'] * df['avg_minutes']
+        else:
+            df['projected_minutes_lost'] = df['foul_rate'] * 30  # Assume 30 avg minutes
         
-        # Players in foul trouble percentage
-        df['player_home_foul_trouble_pct'] = df['player_home_foul_trouble_count'] / df['player_home_available_count']
-        df['player_away_foul_trouble_pct'] = df['player_away_foul_trouble_count'] / df['player_away_available_count']
-        
-        # Foul trouble percentage differential
-        df['player_foul_trouble_pct_diff'] = df['player_home_foul_trouble_pct'] - df['player_away_foul_trouble_pct']
-        
-        # Disciplinary issues
-        df['player_home_technical_fouls'] = np.random.randint(0, 2, len(df))
-        df['player_away_technical_fouls'] = np.random.randint(0, 2, len(df))
-        
-        # Technical foul differential
-        df['player_technical_foul_diff'] = df['player_home_technical_fouls'] - df['player_away_technical_fouls']
+        # Foul efficiency (lower is better)
+        df['foul_efficiency'] = 1 / (1 + df['foul_rate'])
         
         return df
     
-    def _add_bench_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add bench utilization and depth features."""
-        # Bench player availability
-        df['player_home_bench_available'] = df['player_home_available_count'] - df['player_home_starters_available']
-        df['player_away_bench_available'] = df['player_away_available_count'] - df['player_away_starters_available']
+    def compute_bench_depth(self, players_df):
+        """
+        Compute bench depth metrics:
+        - Bench Contribution % = Bench Points / Total Points
+        """
+        df = players_df.copy()
         
-        # Bench utilization percentage
-        df['player_home_bench_utilization'] = df['player_home_bench_available'] / df['player_home_available_count']
-        df['player_away_bench_utilization'] = df['player_away_bench_available'] / df['player_away_available_count']
+        # Determine if player is starter or bench
+        if 'is_starter' not in df.columns:
+            if 'minutes' in df.columns:
+                df['is_starter'] = (df['minutes'] > 25).astype(int)
+            elif 'role' in df.columns:
+                df['is_starter'] = df['role'].str.contains('starter|starting', case=False, na=False).astype(int)
+            else:
+                df['is_starter'] = np.random.choice([0, 1], len(df), p=[0.7, 0.3])
         
-        # Bench utilization differential
-        df['player_bench_utilization_diff'] = df['player_home_bench_utilization'] - df['player_away_bench_utilization']
+        # Calculate bench contribution
+        if 'points' in df.columns:
+            # Total team points for each game
+            df['team_total_points'] = df.groupby('game_id')['points'].transform('sum')
+            
+            # Bench points for each game
+            df['bench_points'] = df.groupby('game_id').apply(
+                lambda x: x.loc[x['is_starter'] == 0, 'points'].sum()
+            ).reset_index(0, drop=True)
+            
+            # Bench contribution percentage
+            df['bench_contribution_pct'] = df['bench_points'] / df['team_total_points'].clip(lower=1)
+            
+            # Individual bench player contribution
+            df['player_bench_contribution'] = np.where(
+                df['is_starter'] == 0,
+                df['points'] / df['team_total_points'].clip(lower=1),
+                0
+            )
+        else:
+            df['bench_contribution_pct'] = 0.3  # Default 30%
+            df['player_bench_contribution'] = 0
         
-        # Bench quality indicators
-        df['player_home_bench_experience'] = np.random.normal(1.8, 0.6, len(df))
-        df['player_away_bench_experience'] = np.random.normal(1.8, 0.6, len(df))
+        # Bench depth quality
+        df['bench_depth_quality'] = pd.cut(
+            df['bench_contribution_pct'],
+            bins=[0, 0.2, 0.35, 0.5, 1.0],
+            labels=['poor', 'below_average', 'average', 'good']
+        )
         
-        # Bench experience differential
-        df['player_bench_experience_diff'] = df['player_home_bench_experience'] - df['player_away_bench_experience']
-        
-        # Sixth man availability
-        df['player_home_sixth_man_available'] = (df['player_home_bench_available'] > 0).astype(int)
-        df['player_away_sixth_man_available'] = (df['player_away_bench_available'] > 0).astype(int)
-        
-        # Sixth man differential
-        df['player_sixth_man_diff'] = df['player_home_sixth_man_available'] - df['player_away_sixth_man_available']
+        # Sixth man indicator (highest scoring bench player)
+        if 'points' in df.columns:
+            df['is_sixth_man'] = df.groupby('game_id').apply(
+                lambda x: (x['is_starter'] == 0) & (x['points'] == x.loc[x['is_starter'] == 0, 'points'].max())
+            ).reset_index(0, drop=True).astype(int)
+        else:
+            df['is_sixth_man'] = 0
         
         return df
     
-    def _add_star_player_features(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add star player impact and availability features."""
-        # Star player availability (top 2 scorers)
-        df['player_home_star_players_available'] = np.random.randint(1, 3, len(df))
-        df['player_away_star_players_available'] = np.random.randint(1, 3, len(df))
-        
-        # Star player availability percentage
-        df['player_home_star_availability_pct'] = df['player_home_star_players_available'] / 2.0
-        df['player_away_star_availability_pct'] = df['player_away_star_players_available'] / 2.0
-        
-        # Star player availability differential
-        df['player_star_availability_diff'] = df['player_home_star_availability_pct'] - df['player_away_star_availability_pct']
-        
-        # Star player injury impact
-        df['player_home_star_injured'] = (df['player_home_star_players_available'] < 2).astype(int)
-        df['player_away_star_injured'] = (df['player_away_star_players_available'] < 2).astype(int)
-        
-        # Star player injury differential
-        df['player_star_injury_diff'] = df['player_home_star_injured'] - df['player_away_star_injured']
-        
-        # Clutch player availability (last 5 minutes of close games)
-        df['player_home_clutch_players'] = np.random.randint(2, 4, len(df))
-        df['player_away_clutch_players'] = np.random.randint(2, 4, len(df))
-        
-        # Clutch player differential
-        df['player_clutch_diff'] = df['player_home_clutch_players'] - df['player_away_clutch_players']
-        
-        # Leadership availability (seniors + captains)
-        df['player_home_leadership_available'] = np.random.randint(1, 3, len(df))
-        df['player_away_leadership_available'] = np.random.randint(1, 3, len(df))
-        
-        # Leadership differential
-        df['player_leadership_diff'] = df['player_home_leadership_available'] - df['player_away_leadership_available']
-        
+    def transform(self, df):
+        """
+        Apply all player feature transformations
+        """
+        df = self.compute_injury_flags(df)
+        df = self.compute_foul_trouble(df)
+        df = self.compute_bench_depth(df)
         return df

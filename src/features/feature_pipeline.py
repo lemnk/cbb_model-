@@ -7,384 +7,334 @@ all individual feature engineers and creating a unified feature dataset.
 
 import pandas as pd
 import numpy as np
-from sqlalchemy import create_engine
-from datetime import datetime, timedelta
+from datetime import datetime
+import os
 
-from src.db import get_engine
-from src.features.team_features import TeamFeatures
-from src.features.player_features import PlayerFeatures
-from src.features.market_features import MarketFeatures
-from src.features.dynamic_features import DynamicFeatures
-
+from .team_features import TeamFeatures
+from .player_features import PlayerFeatures
+from .market_features import MarketFeatures
+from .dynamic_features import DynamicFeatures
+from .feature_utils import normalize, handle_missing
 
 class FeaturePipeline:
-    """Orchestrates the complete feature engineering pipeline."""
+    """
+    Orchestrates the complete feature engineering pipeline for CBB betting analysis.
+    """
     
     def __init__(self):
         """Initialize the feature pipeline."""
-        self.engine = get_engine()
+        self.team_features = TeamFeatures()
+        self.player_features = PlayerFeatures()
+        self.market_features = MarketFeatures()
+        self.dynamic_features = DynamicFeatures()
         
-        # Initialize feature engineers
-        self.team_features = TeamFeatures(self.engine)
-        self.player_features = PlayerFeatures(self.engine)
-        self.market_features = MarketFeatures(self.engine)
-        self.dynamic_features = DynamicFeatures(self.engine)
+        # Feature weights for Game Strength Index
+        self.feature_weights = {
+            'team_efficiency': 0.35,
+            'player_availability': 0.25,
+            'dynamic_factors': 0.20,
+            'market_signals': 0.20
+        }
     
-    def build_features(self):
-        """Build the complete feature set by orchestrating all feature engineers.
-        
-        Returns:
-            DataFrame with all features merged
+    def load_sample_data(self):
         """
-        print("🚀 Starting feature engineering pipeline...")
-        
-        # 1. Load raw data from DB
-        print("📊 Loading raw data from database...")
-        games_df = self._load_games_data()
-        odds_df = self._load_odds_data()
-        
-        if games_df.empty:
-            print("❌ No games data found. Exiting pipeline.")
-            return pd.DataFrame()
-        
-        print(f"✅ Loaded {len(games_df)} games and {len(odds_df)} odds records")
-        
-        # 2. Apply feature engineers
-        print("🔧 Computing team features...")
-        team_feats = self.team_features.transform(games_df)
-        
-        print("👥 Computing player features...")
-        player_feats = self.player_features.transform(games_df)
-        
-        print("💰 Computing market features...")
-        market_feats = self.market_features.transform(odds_df)
-        
-        print("⚡ Computing dynamic features...")
-        dynamic_feats = self.dynamic_features.transform(games_df)
-        
-        # 3. Merge all features
-        print("🔗 Merging all feature sets...")
-        features = self._merge_features(games_df, team_feats, player_feats, market_feats, dynamic_feats)
-        
-        # 4. Finalize feature set
-        print("✨ Finalizing feature set...")
-        features = self._finalize_feature_set(features)
-        
-        # 5. Save features
-        filename = self._save_features(features)
-        
-        # 6. Print summary
-        self._print_summary(features, filename)
-        
-        return features
-    
-    def _load_games_data(self) -> pd.DataFrame:
-        """Load games data from database.
-        
-        Returns:
-            DataFrame with games data
+        Load sample data for demonstration purposes.
+        In production, this would load from the Phase 1 database.
         """
-        try:
-            query = "SELECT * FROM games ORDER BY date"
-            games_df = pd.read_sql(query, self.engine)
-            
-            # Ensure date column is datetime
-            if 'date' in games_df.columns:
-                games_df['date'] = pd.to_datetime(games_df['date'])
-            
-            return games_df
-            
-        except Exception as e:
-            print(f"⚠️ Warning: Could not load games data: {e}")
-            print("📝 Creating sample games data for demonstration...")
-            return self._create_sample_games_data()
-    
-    def _load_odds_data(self) -> pd.DataFrame:
-        """Load odds data from database.
-        
-        Returns:
-            DataFrame with odds data
-        """
-        try:
-            query = "SELECT * FROM odds ORDER BY game_id"
-            odds_df = pd.read_sql(query, self.engine)
-            return odds_df
-            
-        except Exception as e:
-            print(f"⚠️ Warning: Could not load odds data: {e}")
-            print("📝 Creating sample odds data for demonstration...")
-            return self._create_sample_odds_data()
-    
-    def _create_sample_games_data(self) -> pd.DataFrame:
-        """Create sample games data for demonstration.
-        
-        Returns:
-            DataFrame with sample games data
-        """
+        # Generate sample games data
         np.random.seed(42)
-        
-        # Create sample teams
-        teams = ['Duke', 'North Carolina', 'Kentucky', 'Kansas', 'Michigan State', 
-                'Villanova', 'Gonzaga', 'Baylor', 'Arizona', 'UCLA']
-        
-        # Create sample games
         n_games = 100
-        games_data = []
         
-        for i in range(n_games):
-            home_team = np.random.choice(teams)
-            away_team = np.random.choice([t for t in teams if t != home_team])
-            
-            # Generate realistic scores
-            home_score = np.random.randint(60, 100)
-            away_score = np.random.randint(60, 100)
-            
-            # Generate date (last 6 months)
-            date = datetime.now() - timedelta(days=np.random.randint(0, 180))
-            
-            games_data.append({
-                'game_id': f'game_{i:04d}',
-                'date': date,
-                'home_team': home_team,
-                'away_team': away_team,
-                'home_score': home_score,
-                'away_score': away_score,
-                'location': f'{home_team} Arena',
-                'overtime': False
-            })
+        sample_games = pd.DataFrame({
+            'game_id': range(1, n_games + 1),
+            'date': pd.date_range('2024-01-01', periods=n_games, freq='D'),
+            'home_team': np.random.choice(['Team A', 'Team B', 'Team C', 'Team D'], n_games),
+            'away_team': np.random.choice(['Team E', 'Team F', 'Team G', 'Team H'], n_games),
+            'home_score': np.random.randint(60, 100, n_games),
+            'away_score': np.random.randint(60, 100, n_games),
+            'home_points_allowed': np.random.randint(60, 100, n_games),
+            'away_points_allowed': np.random.randint(60, 100, n_games),
+            'home_possessions': np.random.randint(60, 80, n_games),
+            'away_possessions': np.random.randint(60, 80, n_games),
+            'home_minutes': np.random.randint(200, 240, n_games),
+            'away_minutes': np.random.randint(200, 240, n_games),
+            'is_home': np.random.choice([0, 1], n_games),
+            'team': np.random.choice(['Team A', 'Team B', 'Team C', 'Team D', 'Team E', 'Team F', 'Team G', 'Team H'], n_games),
+            'result': np.random.choice(['win', 'loss'], n_games),
+            'points': np.random.randint(60, 100, n_games),
+            'opponent_points': np.random.randint(60, 100, n_games)
+        })
         
-        return pd.DataFrame(games_data)
+        # Generate sample odds data
+        sample_odds = pd.DataFrame({
+            'game_id': range(1, n_games + 1),
+            'open_spread': np.random.normal(0, 10, n_games),
+            'close_spread': np.random.normal(0, 10, n_games),
+            'open_total': np.random.normal(140, 20, n_games),
+            'close_total': np.random.normal(140, 20, n_games),
+            'open_moneyline': np.random.choice([-150, -120, -110, -105, 105, 110, 120, 150], n_games),
+            'close_moneyline': np.random.choice([-150, -120, -110, -105, 105, 110, 120, 150], n_games)
+        })
+        
+        # Generate sample player data
+        sample_players = pd.DataFrame({
+            'game_id': np.repeat(range(1, n_games + 1), 10),  # 10 players per game
+            'player_id': range(1, n_games * 10 + 1),
+            'team': np.random.choice(['Team A', 'Team B', 'Team C', 'Team D', 'Team E', 'Team F', 'Team G', 'Team H'], n_games * 10),
+            'name': [f'Player_{i}' for i in range(1, n_games * 10 + 1)],
+            'minutes': np.random.randint(0, 40, n_games * 10),
+            'points': np.random.randint(0, 30, n_games * 10),
+            'fouls': np.random.randint(0, 5, n_games * 10),
+            'injury_status': np.random.choice(['healthy', 'questionable', 'out'], n_games * 10, p=[0.8, 0.15, 0.05])
+        })
+        
+        return sample_games, sample_odds, sample_players
     
-    def _create_sample_odds_data(self) -> pd.DataFrame:
-        """Create sample odds data for demonstration.
-        
-        Returns:
-            DataFrame with sample odds data
+    def build_features(self, games_df=None, odds_df=None, players_df=None):
         """
-        np.random.seed(42)
-        
-        # Create sample odds for the games
-        n_games = 100
-        odds_data = []
-        
-        for i in range(n_games):
-            # Generate realistic odds
-            open_spread = np.random.uniform(-15, 15)
-            close_spread = open_spread + np.random.uniform(-3, 3)
-            
-            open_total = np.random.uniform(130, 180)
-            close_total = open_total + np.random.uniform(-5, 5)
-            
-            # Generate moneyline odds
-            if open_spread > 0:
-                open_ml_home = -110
-                open_ml_away = +110
-            else:
-                open_ml_home = +110
-                open_ml_away = -110
-            
-            if close_spread > 0:
-                close_ml_home = -110
-                close_ml_away = +110
-            else:
-                close_ml_home = +110
-                close_ml_away = -110
-            
-            odds_data.append({
-                'game_id': f'game_{i:04d}',
-                'book': 'pinnacle',
-                'open_ml_home': open_ml_home,
-                'close_ml_home': close_ml_home,
-                'open_ml_away': open_ml_away,
-                'close_ml_away': close_ml_away,
-                'open_spread': open_spread,
-                'close_spread': close_spread,
-                'open_total': open_total,
-                'close_total': close_total
-            })
-        
-        return pd.DataFrame(odds_data)
-    
-    def _merge_features(self, games_df: pd.DataFrame, team_feats: pd.DataFrame, 
-                       player_feats: pd.DataFrame, market_feats: pd.DataFrame, 
-                       dynamic_feats: pd.DataFrame) -> pd.DataFrame:
-        """Merge all feature sets into a single DataFrame.
+        Build the complete feature set by applying all feature modules.
         
         Args:
-            games_df: Base games DataFrame
-            team_feats: Team features DataFrame
-            player_feats: Player features DataFrame
-            market_feats: Market features DataFrame
-            dynamic_feats: Dynamic features DataFrame
+            games_df: Games DataFrame (if None, loads sample data)
+            odds_df: Odds DataFrame (if None, loads sample data)
+            players_df: Players DataFrame (if None, loads sample data)
+            
+        Returns:
+            DataFrame with all engineered features
+        """
+        # Load data if not provided
+        if games_df is None or odds_df is None or players_df is None:
+            games_df, odds_df, players_df = self.load_sample_data()
+        
+        print("Building features...")
+        print(f"Input data shapes: Games={games_df.shape}, Odds={odds_df.shape}, Players={players_df.shape}")
+        
+        # Apply team features
+        print("Computing team features...")
+        team_features_df = self.team_features.transform(games_df)
+        
+        # Apply player features
+        print("Computing player features...")
+        player_features_df = self.player_features.transform(players_df)
+        
+        # Apply market features
+        print("Computing market features...")
+        market_features_df = self.market_features.transform(odds_df)
+        
+        # Apply dynamic features
+        print("Computing dynamic features...")
+        dynamic_features_df = self.dynamic_features.transform(games_df)
+        
+        # Merge all features by game_id
+        print("Merging features...")
+        merged_features = self._merge_features(
+            team_features_df, player_features_df, market_features_df, dynamic_features_df
+        )
+        
+        # Handle missing values
+        print("Handling missing values...")
+        merged_features = handle_missing(merged_features, strategy="zero")
+        
+        # Compute Game Strength Index
+        print("Computing Game Strength Index...")
+        merged_features = self.compute_game_index(merged_features)
+        
+        print(f"Final feature set shape: {merged_features.shape}")
+        return merged_features
+    
+    def _merge_features(self, team_df, player_df, market_df, dynamic_df):
+        """
+        Merge all feature DataFrames by game_id.
+        
+        Args:
+            team_df: Team features DataFrame
+            player_df: Player features DataFrame
+            market_df: Market features DataFrame
+            dynamic_df: Dynamic features DataFrame
             
         Returns:
             Merged DataFrame with all features
         """
-        # Start with games data
-        features = games_df.copy()
+        # Ensure all DataFrames have game_id column
+        if 'game_id' not in team_df.columns:
+            team_df['game_id'] = range(1, len(team_df) + 1)
+        if 'game_id' not in player_df.columns:
+            player_df['game_id'] = range(1, len(player_df) + 1)
+        if 'game_id' not in market_df.columns:
+            market_df['game_id'] = range(1, len(market_df) + 1)
+        if 'game_id' not in dynamic_df.columns:
+            dynamic_df['game_id'] = range(1, len(dynamic_df) + 1)
         
-        # Merge team features
-        if not team_feats.empty:
-            features = features.merge(team_feats, left_index=True, right_index=True, how='left')
+        # Start with team features as base
+        merged = team_df.copy()
         
-        # Merge player features
-        if not player_feats.empty:
-            features = features.merge(player_feats, left_index=True, right_index=True, how='left')
+        # Merge player features (aggregate by game_id)
+        if not player_df.empty:
+            player_agg = player_df.groupby('game_id').agg({
+                'injury_flag': 'sum',
+                'foul_rate': 'mean',
+                'projected_minutes_lost': 'sum',
+                'bench_contribution_pct': 'mean',
+                'bench_depth': 'mean'
+            }).reset_index()
+            merged = merged.merge(player_agg, on='game_id', how='left')
+        
+        # Merge market features
+        if not market_df.empty:
+            market_cols = [col for col in market_df.columns if col != 'game_id']
+            market_subset = market_df[['game_id'] + market_cols]
+            merged = merged.merge(market_subset, on='game_id', how='left')
         
         # Merge dynamic features
-        if not dynamic_feats.empty:
-            features = features.merge(dynamic_feats, left_index=True, right_index=True, how='left')
+        if not dynamic_df.empty:
+            dynamic_cols = [col for col in dynamic_df.columns if col != 'game_id']
+            dynamic_subset = dynamic_df[['game_id'] + dynamic_cols]
+            merged = merged.merge(dynamic_subset, on='game_id', how='left')
         
-        # Merge market features (need to match by game_id)
-        if not market_feats.empty and 'game_id' in market_feats.columns:
-            features = features.merge(market_feats, on='game_id', how='left')
-        
-        return features
+        return merged
     
-    def _finalize_feature_set(self, features: pd.DataFrame) -> pd.DataFrame:
-        """Finalize the feature set with additional enhancements.
+    def compute_game_index(self, features_df):
+        """
+        Compute the Game Strength Index (GSI) using the formula:
+        GSI = 0.35*normalize(team_eff) + 0.25*normalize(player_avail) + 
+              0.20*normalize(dyn_factors) + 0.20*normalize(market_signals)
         
         Args:
-            features: Raw merged features DataFrame
+            features_df: DataFrame with all features
             
         Returns:
-            Finalized features DataFrame
+            DataFrame with GSI column added
         """
-        # Remove duplicate columns (keep first occurrence)
-        features = features.loc[:, ~features.columns.duplicated()]
+        df = features_df.copy()
         
-        # Fill missing values
-        features = self._fill_missing_values(features)
+        # Team efficiency component (35%)
+        team_cols = [col for col in df.columns if 'team_' in col and df[col].dtype in [np.number]]
+        if team_cols:
+            team_efficiency = df[team_cols].mean(axis=1)
+            team_efficiency_norm = normalize(team_efficiency, method="minmax")
+        else:
+            team_efficiency_norm = pd.Series(0.5, index=df.index)
         
-        # Add feature metadata
-        features['feature_generation_date'] = datetime.now()
-        features['feature_version'] = '2.0.0'
+        # Player availability component (25%)
+        player_cols = [col for col in df.columns if any(x in col for x in ['injury', 'foul', 'bench', 'minutes']) and df[col].dtype in [np.number]]
+        if player_cols:
+            player_availability = df[player_cols].mean(axis=1)
+            player_availability_norm = normalize(player_availability, method="minmax")
+        else:
+            player_availability_norm = pd.Series(0.5, index=df.index)
         
-        # Sort by date and game_id
-        if 'date' in features.columns:
-            features = features.sort_values(['date', 'game_id'])
+        # Dynamic factors component (20%)
+        dynamic_cols = [col for col in df.columns if any(x in col for x in ['streak', 'rest', 'travel', 'altitude']) and df[col].dtype in [np.number]]
+        if dynamic_cols:
+            dynamic_factors = df[dynamic_cols].mean(axis=1)
+            dynamic_factors_norm = normalize(dynamic_factors, method="minmax")
+        else:
+            dynamic_factors_norm = pd.Series(0.5, index=df.index)
         
-        return features
+        # Market signals component (20%)
+        market_cols = [col for col in df.columns if any(x in col for x in ['movement', 'market', 'clv', 'edge']) and df[col].dtype in [np.number]]
+        if market_cols:
+            market_signals = df[market_cols].mean(axis=1)
+            market_signals_norm = normalize(market_signals, method="minmax")
+        else:
+            market_signals_norm = pd.Series(0.5, index=df.index)
+        
+        # Compute weighted GSI
+        df['game_strength_index'] = (
+            self.feature_weights['team_efficiency'] * team_efficiency_norm +
+            self.feature_weights['player_availability'] * player_availability_norm +
+            self.feature_weights['dynamic_factors'] * dynamic_factors_norm +
+            self.feature_weights['market_signals'] * market_signals_norm
+        )
+        
+        # GSI categories
+        df['gsi_category'] = pd.cut(
+            df['game_strength_index'],
+            bins=[0, 0.2, 0.4, 0.6, 0.8, 1.0],
+            labels=['very_low', 'low', 'moderate', 'high', 'very_high']
+        )
+        
+        return df
     
-    def _fill_missing_values(self, features: pd.DataFrame) -> pd.DataFrame:
-        """Fill missing values in the feature set.
+    def save_features(self, features_df, output_dir="data"):
+        """
+        Save the engineered features to CSV file.
         
         Args:
-            features: Features DataFrame with missing values
-            
-        Returns:
-            DataFrame with filled missing values
+            features_df: DataFrame with features
+            output_dir: Output directory for saving features
         """
-        # Fill numeric columns with median
-        numeric_cols = features.select_dtypes(include=[np.number]).columns
-        for col in numeric_cols:
-            if features[col].isnull().any():
-                median_val = features[col].median()
-                features[col] = features[col].fillna(median_val)
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
         
-        # Fill categorical columns with mode
-        categorical_cols = features.select_dtypes(include=['object', 'category']).columns
-        for col in categorical_cols:
-            if features[col].isnull().any():
-                mode_val = features[col].mode().iloc[0] if not features[col].mode().empty else 'Unknown'
-                features[col] = features[col].fillna(mode_val)
-        
-        return features
-    
-    def _save_features(self, features: pd.DataFrame) -> str:
-        """Save features to CSV file.
-        
-        Args:
-            features: Features DataFrame to save
-            
-        Returns:
-            Filename where features were saved
-        """
-        # Create filename with timestamp
-        timestamp = datetime.now().strftime('%Y%m%d')
-        filename = f"data/features_{timestamp}.csv"
-        
-        # Ensure data directory exists
-        import os
-        os.makedirs('data', exist_ok=True)
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d")
+        filename = f"features_{timestamp}.csv"
+        filepath = os.path.join(output_dir, filename)
         
         # Save to CSV
-        features.to_csv(filename, index=False)
+        features_df.to_csv(filepath, index=False)
+        print(f"Features saved to: {filepath}")
         
-        return filename
+        return filepath
     
-    def _print_summary(self, features: pd.DataFrame, filename: str):
-        """Print summary of the generated features.
+    def print_summary(self, features_df):
+        """
+        Print a summary of the engineered features.
         
         Args:
-            features: Features DataFrame
-            filename: Filename where features were saved
+            features_df: DataFrame with features
         """
         print("\n" + "="*60)
-        print("🎯 FEATURE ENGINEERING PIPELINE COMPLETE!")
+        print("FEATURE ENGINEERING SUMMARY")
         print("="*60)
         
-        print(f"📊 Dataset Shape: {features.shape[0]} rows × {features.shape[1]} columns")
-        print(f"💾 Saved to: {filename}")
+        print(f"Total features: {len(features_df.columns)}")
+        print(f"Total games: {len(features_df)}")
         
-        # Feature count by category
-        feature_categories = {
-            'Team Features': [col for col in features.columns if col.startswith('team_')],
-            'Player Features': [col for col in features.columns if col.startswith('player_')],
-            'Market Features': [col for col in features.columns if col.startswith('market_')],
-            'Dynamic Features': [col for col in features.columns if col.startswith('dynamic_')]
-        }
+        # Feature categories
+        team_features = [col for col in features_df.columns if 'team_' in col]
+        player_features = [col for col in features_df.columns if any(x in col for x in ['injury', 'foul', 'bench', 'minutes'])]
+        market_features = [col for col in features_df.columns if any(x in col for x in ['movement', 'market', 'clv', 'edge'])]
+        dynamic_features = [col for col in features_df.columns if any(x in col for x in ['streak', 'rest', 'travel', 'altitude'])]
         
-        print("\n📈 Feature Breakdown:")
-        for category, cols in feature_categories.items():
-            print(f"   {category}: {len(cols)} features")
+        print(f"\nFeature breakdown:")
+        print(f"  Team features: {len(team_features)}")
+        print(f"  Player features: {len(player_features)}")
+        print(f"  Market features: {len(market_features)}")
+        print(f"  Dynamic features: {len(dynamic_features)}")
+        
+        # GSI statistics
+        if 'game_strength_index' in features_df.columns:
+            gsi_stats = features_df['game_strength_index'].describe()
+            print(f"\nGame Strength Index statistics:")
+            print(f"  Mean: {gsi_stats['mean']:.3f}")
+            print(f"  Std: {gsi_stats['std']:.3f}")
+            print(f"  Min: {gsi_stats['min']:.3f}")
+            print(f"  Max: {gsi_stats['max']:.3f}")
         
         # Sample features
-        print(f"\n🔍 Sample Features (first 10):")
-        sample_cols = [col for col in features.columns if not col.startswith('feature_')][:10]
+        print(f"\nSample features (first 5 columns):")
+        sample_cols = features_df.columns[:5].tolist()
         for col in sample_cols:
-            print(f"   • {col}")
+            print(f"  {col}")
         
-        # Data quality info
-        missing_pct = (features.isnull().sum().sum() / (len(features) * len(features.columns))) * 100
-        print(f"\n✅ Data Quality:")
-        print(f"   Missing Values: {missing_pct:.2f}%")
-        print(f"   Duplicate Rows: {features.duplicated().sum()}")
-        
-        print("\n🚀 Features are ready for ML model training!")
         print("="*60)
-
-
-def get_engine():
-    """Get database engine for feature pipeline.
-    
-    Returns:
-        SQLAlchemy engine
-    """
-    try:
-        # Try to get engine from db module
-        from src.db import DatabaseManager
-        db_manager = DatabaseManager()
-        return db_manager.engine
-    except ImportError:
-        # Fallback to creating a dummy engine for demo
-        print("⚠️ Warning: Could not import DatabaseManager, using dummy engine")
-        return None
 
 
 if __name__ == "__main__":
-    """Run the feature pipeline when executed directly."""
-    try:
-        pipeline = FeaturePipeline()
-        features = pipeline.build_features()
-        
-        if not features.empty:
-            print(f"\n🎉 Successfully generated {len(features.columns)} features!")
-            print(f"📁 Features saved to data/features_YYYYMMDD.csv")
-        else:
-            print("\n❌ Feature generation failed!")
-            
-    except Exception as e:
-        print(f"\n💥 Error running feature pipeline: {e}")
-        import traceback
-        traceback.print_exc()
+    # Demo the feature pipeline
+    pipeline = FeaturePipeline()
+    
+    # Build features
+    features = pipeline.build_features()
+    
+    # Print summary
+    pipeline.print_summary(features)
+    
+    # Save features
+    output_file = pipeline.save_features(features)
+    
+    print(f"\nFeature engineering complete! Features saved to: {output_file}")
+    print(f"Feature set shape: {features.shape}")
+    print(f"Sample features:\n{features.head()}")

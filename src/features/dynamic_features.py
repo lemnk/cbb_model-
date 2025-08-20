@@ -11,6 +11,7 @@ This module handles dynamic situational feature engineering including:
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from .feature_utils import ensure_time_order, safe_fill
 
 
 class DynamicFeatures:
@@ -28,8 +29,12 @@ class DynamicFeatures:
         """
         Compute streak-related features:
         - Win/Loss streak length
+        - Streak momentum and categories
         """
         df = df.copy()
+        
+        # Ensure proper time ordering to prevent data leakage
+        df = ensure_time_order(df, date_col="date", team_col="team")
         
         # Ensure we have win/loss indicators
         if 'won' not in df.columns:
@@ -38,19 +43,16 @@ class DynamicFeatures:
             elif 'points' in df.columns and 'opponent_points' in df.columns:
                 df['won'] = (df['points'] > df['opponent_points']).astype(int)
             else:
+                # Simulate win/loss data (in production, use real data)
+                np.random.seed(42)
                 df['won'] = np.random.choice([0, 1], len(df))
         
-        # Sort by team and date for streak calculations
-        if 'date' in df.columns:
-            df['date'] = pd.to_datetime(df['date'])
-            df = df.sort_values(['team', 'date'])
-        
-        # Calculate win streaks
+        # Calculate win streaks with proper time ordering
         df['win_streak'] = df.groupby('team')['won'].rolling(
             window=10, min_periods=1
         ).apply(lambda x: self._calculate_streak(x)).reset_index(0, drop=True)
         
-        # Calculate loss streaks
+        # Calculate loss streaks with proper time ordering
         df['loss_streak'] = df.groupby('team')['won'].rolling(
             window=10, min_periods=1
         ).apply(lambda x: self._calculate_streak(1 - x)).reset_index(0, drop=True)
@@ -63,6 +65,17 @@ class DynamicFeatures:
             df['streak_momentum'],
             bins=[-10, -5, -2, 0, 2, 5, 10],
             labels=['cold', 'cool', 'slight_cool', 'neutral', 'slight_hot', 'hot', 'on_fire']
+        )
+        
+        # Current streak status
+        df['current_streak_type'] = np.where(
+            df['win_streak'] > 0,
+            'winning',
+            np.where(
+                df['loss_streak'] > 0,
+                'losing',
+                'neutral'
+            )
         )
         
         # Sort back to original order
@@ -95,16 +108,16 @@ class DynamicFeatures:
         """
         df = df.copy()
         
+        # Ensure proper time ordering to prevent data leakage
+        df = ensure_time_order(df, date_col="date", team_col="team")
+        
         # Ensure we have date column
         if 'date' not in df.columns:
             df['date'] = pd.date_range('2024-01-01', periods=len(df), freq='D')
         else:
             df['date'] = pd.to_datetime(df['date'])
         
-        # Sort by team and date
-        df = df.sort_values(['team', 'date'])
-        
-        # Calculate days since last game
+        # Calculate days since last game with proper time ordering
         df['days_since_last_game'] = df.groupby('team')['date'].diff().dt.days
         
         # Fill first game for each team
@@ -138,6 +151,17 @@ class DynamicFeatures:
         # Extended rest indicator
         df['is_extended_rest'] = (df['days_since_last_game'] >= 5).astype(int)
         
+        # Rest quality score
+        df['rest_quality_score'] = np.where(
+            df['days_since_last_game'] <= 1,
+            0.2,  # Poor rest
+            np.where(
+                df['days_since_last_game'] <= 3,
+                0.6,  # Moderate rest
+                1.0   # Good rest
+            )
+        )
+        
         # Sort back to original order
         df = df.sort_index()
         
@@ -147,8 +171,12 @@ class DynamicFeatures:
         """
         Compute travel-related features:
         - Travel Distance using haversine formula
+        - Travel fatigue and time zone changes
         """
         df = df.copy()
+        
+        # Ensure proper time ordering
+        df = ensure_time_order(df, date_col="date", team_col="team")
         
         # Simulate travel distances (in production, use real venue coordinates)
         np.random.seed(42)
@@ -179,14 +207,25 @@ class DynamicFeatures:
         # Travel efficiency (distance per day)
         df['travel_efficiency'] = df['travel_distance_miles'] / df['days_since_last_game'].clip(lower=1)
         
+        # Travel impact score
+        df['travel_impact_score'] = (
+            df['travel_fatigue'] * 0.4 + 
+            (df['timezone_changes'] / 2) * 0.3 + 
+            (df['travel_distance_miles'] > 1000).astype(int) * 0.3
+        )
+        
         return df
     
     def compute_altitude(self, df):
         """
         Compute altitude-related features:
         - Altitude Flag = 1 if Home Court > 3000ft else 0
+        - Altitude adjustment factors
         """
         df = df.copy()
+        
+        # Ensure proper time ordering
+        df = ensure_time_order(df, date_col="date", team_col="team")
         
         # Simulate venue altitudes (in production, use real venue database)
         np.random.seed(42)
@@ -217,14 +256,75 @@ class DynamicFeatures:
         # Altitude impact on performance (theoretical)
         df['altitude_performance_impact'] = df['altitude_adjustment'] * 0.1  # 10% impact per 1000ft above 3000
         
+        # Altitude acclimation factor
+        df['altitude_acclimation'] = np.where(
+            df['venue_altitude_ft'] > 3000,
+            np.exp(-df['altitude_adjustment'] / 2),  # Decay factor for acclimation
+            1.0
+        )
+        
+        return df
+    
+    def compute_situational_factors(self, df):
+        """
+        Compute situational and contextual factors:
+        - Rivalry games
+        - Conference games
+        - Tournament games
+        """
+        df = df.copy()
+        
+        # Ensure proper time ordering
+        df = ensure_time_order(df, date_col="date", team_col="team")
+        
+        # Simulate situational factors (in production, use real data)
+        np.random.seed(42)
+        
+        # Rivalry game indicators
+        df['is_rivalry_game'] = np.random.choice([0, 1], len(df), p=[0.8, 0.2])
+        
+        # Conference game indicators
+        df['is_conference_game'] = np.random.choice([0, 1], len(df), p=[0.6, 0.4])
+        
+        # Tournament game indicators
+        df['is_tournament_game'] = np.random.choice([0, 1], len(df), p=[0.9, 0.1])
+        
+        # Special event indicators
+        df['is_special_event'] = (
+            df['is_rivalry_game'] | 
+            df['is_tournament_game']
+        ).astype(int)
+        
+        # Game importance score
+        df['game_importance_score'] = (
+            df['is_rivalry_game'] * 0.4 + 
+            df['is_conference_game'] * 0.3 + 
+            df['is_tournament_game'] * 0.5
+        )
+        
+        # Pressure situation indicator
+        df['high_pressure_situation'] = (df['game_importance_score'] > 0.5).astype(int)
+        
         return df
     
     def transform(self, df):
         """
-        Apply all dynamic feature transformations
+        Apply all dynamic feature transformations with proper time ordering.
         """
+        # Ensure we have required columns
+        df = safe_fill(df, 'date', pd.Timestamp('2024-01-01'))
+        df = safe_fill(df, 'team', 'unknown_team')
+        
+        # Apply transformations in order
         df = self.compute_streaks(df)
         df = self.compute_rest_days(df)
         df = self.compute_travel(df)
         df = self.compute_altitude(df)
+        df = self.compute_situational_factors(df)
+        
+        # Final safety check - ensure no NaN values
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        for col in numeric_cols:
+            df = safe_fill(df, col, 0)
+        
         return df

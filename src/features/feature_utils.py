@@ -12,6 +12,158 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
+def validate_keys(df, key="game_id", df_name="DataFrame"):
+    """
+    Validate that a DataFrame has the required key column without nulls.
+    
+    Args:
+        df: DataFrame to validate
+        key: Required key column name
+        df_name: Name of DataFrame for error messages
+        
+    Returns:
+        True if validation passes
+        
+    Raises:
+        ValueError: If key is missing or contains nulls
+    """
+    if key not in df.columns:
+        raise ValueError(f"Missing required key `{key}` in {df_name}")
+    if df[key].isnull().any():
+        raise ValueError(f"Null values found in `{key}` of {df_name}")
+    return True
+
+def standardize_team_names(df, team_col="team"):
+    """
+    Standardize team names to prevent merge mismatches.
+    
+    Args:
+        df: DataFrame with team names
+        team_col: Column containing team names
+        
+    Returns:
+        DataFrame with standardized team names
+    """
+    df = df.copy()
+    if team_col in df.columns:
+        df[team_col] = df[team_col].astype(str).str.strip().str.lower()
+    return df
+
+class Normalizer:
+    """
+    Safe normalizer that prevents data leakage by fitting on training data only.
+    """
+    
+    def __init__(self, method="minmax"):
+        self.method = method
+        self.params = {}
+        self.is_fitted = False
+    
+    def fit(self, series):
+        """
+        Fit the normalizer on training data.
+        
+        Args:
+            series: Training data series
+        """
+        if self.method == "minmax":
+            self.params["min"] = series.min()
+            self.params["max"] = series.max()
+        elif self.method == "zscore":
+            self.params["mean"] = series.mean()
+            self.params["std"] = series.std()
+        elif self.method == "robust":
+            median = series.median()
+            q75, q25 = series.quantile([0.75, 0.25])
+            self.params["median"] = median
+            self.params["iqr"] = q75 - q25
+        
+        self.is_fitted = True
+    
+    def transform(self, series):
+        """
+        Transform data using fitted parameters.
+        
+        Args:
+            series: Data to transform
+            
+        Returns:
+            Transformed series
+        """
+        if not self.is_fitted:
+            raise ValueError("Normalizer must be fitted before transform")
+        
+        if self.method == "minmax":
+            min_val = self.params["min"]
+            max_val = self.params["max"]
+            if max_val == min_val:
+                return pd.Series(0.5, index=series.index)
+            return (series - min_val) / (max_val - min_val + 1e-9)
+        elif self.method == "zscore":
+            mean_val = self.params["mean"]
+            std_val = self.params["std"]
+            if std_val == 0:
+                return pd.Series(0, index=series.index)
+            return (series - mean_val) / (std_val + 1e-9)
+        elif self.method == "robust":
+            median_val = self.params["median"]
+            iqr_val = self.params["iqr"]
+            if iqr_val == 0:
+                return pd.Series(0, index=series.index)
+            return (series - median_val) / (iqr_val + 1e-9)
+        else:
+            return series
+    
+    def fit_transform(self, series):
+        """
+        Fit and transform in one step (for training data only).
+        
+        Args:
+            series: Training data series
+            
+        Returns:
+            Transformed series
+        """
+        self.fit(series)
+        return self.transform(series)
+
+def safe_fill(df, col, fill_value=0):
+    """
+    Safely fill missing values in a column, creating the column if it doesn't exist.
+    
+    Args:
+        df: DataFrame to process
+        col: Column name to fill
+        fill_value: Value to use for filling
+        
+    Returns:
+        DataFrame with filled column
+    """
+    df = df.copy()
+    if col not in df.columns:
+        df[col] = fill_value
+    else:
+        df[col] = df[col].fillna(fill_value)
+    return df
+
+def ensure_time_order(df, date_col="date", team_col="team"):
+    """
+    Ensure DataFrame is sorted by team and date to prevent data leakage.
+    
+    Args:
+        df: DataFrame to sort
+        date_col: Date column name
+        team_col: Team column name
+        
+    Returns:
+        Sorted DataFrame
+    """
+    df = df.copy()
+    if date_col in df.columns and team_col in df.columns:
+        df[date_col] = pd.to_datetime(df[date_col])
+        df = df.sort_values([team_col, date_col])
+    return df
+
 def normalize(series, method="minmax"):
     """
     Normalize a Pandas Series using specified method.

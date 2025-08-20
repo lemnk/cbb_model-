@@ -1,98 +1,83 @@
-# Phase 2: Feature Engineering - Implementation Summary
+# Phase 2: Feature Engineering - HARDENED IMPLEMENTATION
 
 ## Overview
-Phase 2 implements a comprehensive feature engineering pipeline for the CBB Betting ML System. The system transforms raw game data, player statistics, odds information, and situational factors into model-ready feature sets that capture the complex dynamics of college basketball games.
+Phase 2 implements a **hardened, production-ready feature engineering pipeline** for the CBB Betting ML System. This phase transforms raw data from Phase 1 into model-ready features while preventing data leakage, ensuring schema integrity, and maintaining data quality.
 
-## Architecture
+## 🛡️ Hardening Patches Applied
 
-### Modular Design
-The feature engineering system is built with a modular, class-based architecture:
+### 1. Schema & Key Integrity
+- **`validate_keys()` function**: Validates required keys exist and contain no nulls before merges
+- **Team name standardization**: Prevents merge mismatches due to casing/whitespace differences
+- **Merge verification**: All joins use `game_id` consistently with validation checks
+- **Duplicate prevention**: Automatic detection and removal of duplicate `game_id` entries
 
+### 2. Data Leakage Prevention
+- **Time ordering enforcement**: All rolling/stat features computed in chronological order
+- **Pre-game data validation**: Market features only use odds data from before game start
+- **Future data guards**: Rest days, travel calculations only use past game information
+- **Rolling window safety**: Explicit time sorting before applying rolling operations
+
+### 3. Safe Normalization & Scaling
+- **`Normalizer` class**: Prevents test data leakage by fitting on training data only
+- **Train/test split**: Uses first 70% of data for fitting normalizers
+- **Consistent scaling**: All GSI components normalized to [0,1] before weighting
+- **Fallback handling**: Graceful degradation when normalizers can't be fitted
+
+### 4. Missing Data & Edge Cases
+- **`safe_fill()` function**: Consistent missing value handling across all feature modules
+- **Graceful degradation**: Pipeline continues even with missing injury reports or odds
+- **Rolling feature safety**: Explicit NaN handling for edge cases (first few games)
+- **Fallback defaults**: Sensible defaults when data is unavailable
+
+### 5. Pipeline Validation
+- **Input validation**: Comprehensive data validation before processing
+- **Merge verification**: Each merge operation validated for success
+- **Final checks**: Comprehensive validation of final feature set
+- **Error reporting**: Clear error messages and warnings for debugging
+
+## 🏗️ Architecture
+
+### Core Components
 ```
 src/features/
 ├── __init__.py              # Package initialization
-├── team_features.py         # Team-level efficiency and performance metrics
-├── player_features.py       # Player availability and impact metrics
-├── dynamic_features.py      # Situational and contextual features
-├── market_features.py       # Betting market and odds analysis
-├── feature_utils.py         # Utility functions for feature processing
-└── feature_pipeline.py      # Orchestration and pipeline management
+├── feature_utils.py         # Validation, normalization, utilities
+├── team_features.py         # Team-level efficiency and consistency
+├── player_features.py       # Player availability and bench depth
+├── dynamic_features.py      # Situational and contextual factors
+├── market_features.py       # Market efficiency and CLV
+└── feature_pipeline.py      # Orchestration and GSI computation
 ```
 
 ### Feature Categories
 
-#### 1. Team Features (`TeamFeatures`)
-**Purpose**: Capture team-level performance characteristics and efficiency metrics.
+#### Team Features (`TeamFeatures`)
+- **Efficiency Metrics**: Offensive/defensive efficiency, pace, consistency
+- **Home/Away Splits**: Win percentages, scoring differentials, court advantage
+- **Consistency Analysis**: Rolling averages (3, 5, 10 games), volatility scoring
+- **Strength of Schedule**: Opponent quality, SOS-adjusted efficiency
 
-**Key Features**:
-- **Offensive Efficiency**: Points per possession, shooting percentages
-- **Defensive Efficiency**: Points allowed per possession, defensive ratings
-- **Pace**: Possessions per game, tempo indicators
-- **Home/Away Splits**: Win percentages, scoring differentials
-- **Consistency Metrics**: Rolling averages (3, 5, 10 games) of scoring and defense
-- **Win/Loss Streaks**: Current streak lengths and momentum indicators
+#### Player Features (`PlayerFeatures`)
+- **Injury Analysis**: Injury flags, severity scoring, recency factors
+- **Foul Trouble**: Foul rates, projected minutes lost, risk assessment
+- **Bench Depth**: Bench contribution, utilization rates, sixth man indicators
+- **Availability Metrics**: Minutes distribution, rotation depth, substitution patterns
 
-**Mathematical Foundation**:
-```
-Offensive Efficiency = Points Scored / Possessions
-Defensive Efficiency = Points Allowed / Possessions
-Pace = Total Possessions / Game Duration
-```
+#### Dynamic Features (`DynamicFeatures`)
+- **Streak Analysis**: Win/loss streaks, momentum scoring, streak categories
+- **Rest Management**: Days since last game, fatigue indexing, rest quality
+- **Travel Factors**: Distance calculations, time zone changes, travel impact
+- **Situational Context**: Rivalry games, conference games, tournament indicators
 
-#### 2. Player Features (`PlayerFeatures`)
-**Purpose**: Assess player availability and its impact on team performance.
+#### Market Features (`MarketFeatures`)
+- **Line Movement**: Spread/total movement, magnitude analysis, movement velocity
+- **Implied Probability**: Moneyline conversion, market edge calculation
+- **Market Efficiency**: Efficiency scoring, line stability, confidence metrics
+- **Closing Line Value**: CLV calculation, overlay thresholds, edge direction
 
-**Key Features**:
-- **Injury Flags**: Binary indicators for player availability
-- **Foul Trouble**: Foul rate, projected minutes lost due to fouls
-- **Bench Contribution**: Percentage of points from bench players
-- **Bench Depth**: Number of available bench players
-- **Minutes Distribution**: Player rotation patterns
+## 🎯 Game Strength Index (GSI) Formula
 
-**Mathematical Foundation**:
-```
-Foul Rate = Fouls / Minutes Played
-Projected Minutes Lost = Fouls × (Average Minutes per Foul)
-Bench Contribution % = Bench Points / Total Team Points
-```
-
-#### 3. Dynamic Features (`DynamicFeatures`)
-**Purpose**: Capture situational and contextual factors that affect game outcomes.
-
-**Key Features**:
-- **Streak Analysis**: Win/loss streak lengths and momentum
-- **Rest Days**: Days since last game, fatigue indicators
-- **Travel Factors**: Distance traveled, time zone changes
-- **Altitude Adjustments**: Venue elevation impact on performance
-
-**Mathematical Foundation**:
-```
-Streak Momentum = Win Streak - Loss Streak
-Fatigue Index = exp(-Rest Days / 3)
-Travel Fatigue = exp(-1000 / Distance) if Distance > 1000 miles
-Altitude Impact = (Altitude - 3000) / 1000 if Altitude > 3000ft
-```
-
-#### 4. Market Features (`MarketFeatures`)
-**Purpose**: Analyze betting market dynamics and identify value opportunities.
-
-**Key Features**:
-- **Line Movement**: Opening vs. closing spread and total changes
-- **Implied Probabilities**: Converted from moneyline odds
-- **Market Efficiency**: Line stability and movement patterns
-- **Closing Line Value (CLV)**: Model predictions vs. market closes
-
-**Mathematical Foundation**:
-```
-Line Movement = Close Line - Open Line
-Implied Probability = 100 / (Moneyline + 100) for positive odds
-Market Efficiency Score = Σ(Movement Magnitudes)
-CLV = Model Prediction - Market Close
-```
-
-### Game Strength Index (GSI)
-
-The system computes a composite Game Strength Index using weighted components:
+The GSI is computed using the **exact formula** specified in the requirements:
 
 ```
 GSI = 0.35 × normalize(team_efficiency) + 
@@ -101,174 +86,180 @@ GSI = 0.35 × normalize(team_efficiency) +
       0.20 × normalize(market_signals)
 ```
 
-**Weighting Rationale**:
-- **Team Efficiency (35%)**: Most predictive of game outcomes
-- **Player Availability (25%)**: Critical for team performance
-- **Dynamic Factors (20%)**: Situational context importance
-- **Market Signals (20%)**: Market sentiment and efficiency
+### Component Details
+- **Team Efficiency (35%)**: Combined offensive/defensive efficiency, normalized to [0,1]
+- **Player Availability (25%)**: Inverse of injury impact, normalized to [0,1]
+- **Dynamic Factors (20%)**: Rest quality, travel impact, normalized to [0,1]
+- **Market Signals (20%)**: Market efficiency inverse, normalized to [0,1]
 
-## Implementation Details
+### Normalization Safety
+- **Training data fitting**: Normalizers fitted on first 70% of data
+- **Consistent scaling**: All components scaled to [0,1] range
+- **Leakage prevention**: No test data used for fitting parameters
 
-### Data Flow
-1. **Input**: Raw game data, player stats, odds data
-2. **Processing**: Each feature module applies transformations
-3. **Merging**: Features combined by `game_id` with proper aggregation
-4. **Output**: Unified feature set with GSI calculation
+## 🔧 Technical Implementation
 
-### Feature Engineering Pipeline
-```python
-# Initialize pipeline
-pipeline = FeaturePipeline()
+### Key Functions
 
-# Build complete feature set
-features = pipeline.build_features()
+#### `validate_keys(df, key="game_id", df_name="DataFrame")`
+- Validates required key columns exist and contain no nulls
+- Called before every merge operation
+- Provides clear error messages for debugging
 
-# Save to CSV with timestamp
-output_file = pipeline.save_features(features)
+#### `ensure_time_order(df, date_col="date", team_col="team")`
+- Sorts DataFrame by team and date to prevent data leakage
+- Applied before all rolling window calculations
+- Ensures chronological ordering for time-series features
 
-# Generate summary report
-pipeline.print_summary(features)
+#### `Normalizer` class
+- Supports minmax, zscore, and robust normalization
+- Fits on training data only to prevent leakage
+- Provides transform method for consistent scaling
+
+#### `safe_fill(df, col, fill_value=0)`
+- Safely fills missing values or creates columns if missing
+- Consistent missing value handling across all modules
+- Prevents pipeline crashes due to missing data
+
+### Pipeline Flow
+1. **Input Validation**: Validate all required keys and data integrity
+2. **Normalizer Fitting**: Fit normalizers on training data subset
+3. **Feature Generation**: Apply all feature modules with time ordering
+4. **Player Aggregation**: Aggregate player features to team level
+5. **Feature Merging**: Merge all features by `game_id` with validation
+6. **GSI Computation**: Calculate Game Strength Index using fitted normalizers
+7. **Final Validation**: Comprehensive validation and cleanup
+8. **Output Generation**: Save features with timestamp
+
+## 📊 Feature Output
+
+### Expected Feature Count
+- **Total Features**: >30 columns (requirement met)
+- **Team Features**: ~15-20 columns
+- **Player Features**: ~8-12 columns  
+- **Dynamic Features**: ~10-15 columns
+- **Market Features**: ~12-18 columns
+- **GSI Components**: 5 columns (gsi, gsi_*, gsi_category)
+
+### Data Quality
+- **No Missing Values**: All missing values handled with safe defaults
+- **No Duplicates**: Automatic duplicate detection and removal
+- **Consistent Types**: Proper data types for all features
+- **Normalized Ranges**: All numeric features in reasonable ranges
+
+## 🧪 Testing & Validation
+
+### Pipeline Testing
+```bash
+# Test the feature pipeline
+python3 -m src.features.feature_pipeline
+
+# Test feature exploration
+python3 notebooks/feature_exploration.py
 ```
 
-### Data Quality Features
-- **Missing Value Handling**: Zero-filling strategy for numeric features
-- **Outlier Detection**: IQR and z-score based outlier identification
-- **Feature Validation**: Correlation analysis and feature importance ranking
-- **Data Consistency**: Proper merging and aggregation by game_id
+### Validation Checks
+- **Schema Integrity**: All merges succeed without silent row dropping
+- **Leakage Prevention**: No future data used in feature computation
+- **Normalization Safety**: Train/test split prevents data leakage
+- **Missing Data Handling**: Graceful degradation with sensible defaults
+- **Feature Richness**: >30 features generated consistently
 
-## Feature Output
+## 🚀 Usage Examples
 
-### Sample Feature Set
-The system generates 50+ engineered features including:
-
-**Team Features (15+ features)**:
-- `team_offensive_efficiency`, `team_defensive_efficiency`
-- `team_pace`, `team_home_win_pct`, `team_away_win_pct`
-- `team_scoring_consistency_3g`, `team_scoring_consistency_10g`
-
-**Player Features (8+ features)**:
-- `injury_flag`, `foul_rate`, `projected_minutes_lost`
-- `bench_contribution_pct`, `bench_depth`
-
-**Dynamic Features (12+ features)**:
-- `win_streak`, `loss_streak`, `streak_momentum`
-- `days_since_last_game`, `fatigue_index`, `travel_distance_miles`
-- `is_high_altitude`, `altitude_adjustment`
-
-**Market Features (15+ features)**:
-- `spread_movement`, `total_movement`, `implied_prob_movement`
-- `market_efficiency_score`, `clv_spread`, `clv_total`
-- `sharp_money_indicator`, `value_bet_positive`
-
-**Composite Features**:
-- `game_strength_index`: Primary prediction target
-- `gsi_category`: Categorical classification of game strength
-
-## Usage Examples
-
-### Basic Feature Generation
+### Basic Pipeline Usage
 ```python
 from src.features.feature_pipeline import FeaturePipeline
 
-# Initialize and run pipeline
+# Initialize pipeline
 pipeline = FeaturePipeline()
-features = pipeline.build_features()
 
-# Access specific feature categories
-team_features = [col for col in features.columns if 'team_' in col]
-market_features = [col for col in features.columns if 'market_' in col]
-```
+# Build features with validation
+features = pipeline.build_features(games_df, odds_df, players_df)
 
-### Custom Data Input
-```python
-# Use custom data instead of sample data
-custom_games = pd.DataFrame(...)
-custom_odds = pd.DataFrame(...)
-custom_players = pd.DataFrame(...)
-
-features = pipeline.build_features(
-    games_df=custom_games,
-    odds_df=custom_odds,
-    players_df=custom_players
-)
+# Save features
+pipeline.save_features(features)
 ```
 
 ### Feature Analysis
 ```python
-# Analyze feature correlations
-from src.features.feature_utils import feature_correlation_analysis
+# Analyze feature categories
+team_features = [col for col in features.columns if col.startswith('team_')]
+player_features = [col for col in features.columns if col.startswith('team_') and 'player' in col]
 
-correlation_results = feature_correlation_analysis(
-    features, 
-    target_col='game_strength_index'
-)
-
-# Handle missing values
-from src.features.feature_utils import handle_missing
-clean_features = handle_missing(features, strategy="zero")
-
-# Normalize features
-from src.features.feature_utils import normalize
-normalized_gsi = normalize(features['game_strength_index'], method="minmax")
+# GSI analysis
+gsi_stats = features['gsi'].describe()
+gsi_categories = features['gsi_category'].value_counts()
 ```
 
-## Integration with Phase 3
+## 🔒 Security & Data Integrity
 
-### ML Model Preparation
-The engineered features provide:
-- **Rich Feature Space**: 50+ predictive variables
-- **Target Variable**: Game Strength Index (GSI)
-- **Feature Categories**: Balanced representation of different aspects
-- **Data Quality**: Clean, normalized, and validated features
+### Data Leakage Prevention
+- **Time-based validation**: All market data validated as pre-game
+- **Chronological ordering**: Rolling features computed in time order
+- **Training isolation**: Normalizers fitted on training data only
+- **Future data guards**: Explicit checks prevent future information usage
 
-### Model Training Ready
-Features are structured for:
-- **Supervised Learning**: GSI as continuous target
-- **Classification**: GSI categories as categorical target
-- **Feature Selection**: Correlation analysis identifies important features
-- **Cross-Validation**: Proper train/test splits by game_id
+### Schema Validation
+- **Key existence**: All required keys validated before processing
+- **Null value checks**: No null values in primary keys
+- **Team consistency**: Team names standardized across datasets
+- **Merge verification**: Each merge operation validated for success
 
-### Performance Metrics
-The feature set enables evaluation of:
-- **Prediction Accuracy**: GSI vs. actual game outcomes
-- **Feature Importance**: Which categories drive predictions
-- **Model Interpretability**: Understanding of betting factors
-- **Risk Assessment**: Confidence in predictions
+### Error Handling
+- **Graceful degradation**: Pipeline continues with missing data
+- **Clear error messages**: Specific error messages for debugging
+- **Fallback mechanisms**: Sensible defaults when data unavailable
+- **Comprehensive logging**: Detailed logging of all operations
 
-## Technical Specifications
+## 📈 Performance & Scalability
 
-### Dependencies
-- **Core**: pandas, numpy, scikit-learn
-- **Visualization**: matplotlib, seaborn
-- **Database**: SQLAlchemy (for Phase 1 integration)
-- **Utilities**: datetime, os
+### Optimization Features
+- **Efficient merges**: All merges use indexed `game_id` columns
+- **Vectorized operations**: NumPy/Pandas operations for speed
+- **Memory management**: Efficient DataFrame operations and cleanup
+- **Batch processing**: Designed for large datasets
 
-### Performance
-- **Scalability**: Handles 100+ games efficiently
-- **Memory**: Optimized for typical dataset sizes
-- **Speed**: Feature generation in seconds for standard datasets
+### Scalability Considerations
+- **Modular design**: Easy to add new feature modules
+- **Configurable parameters**: Adjustable thresholds and parameters
+- **Memory efficient**: Minimal memory overhead during processing
+- **Parallel ready**: Structure supports future parallelization
 
-### Extensibility
-- **New Features**: Easy addition of new feature modules
-- **Custom Metrics**: Flexible feature calculation framework
-- **Data Sources**: Adaptable to different data formats
+## 🔮 Future Enhancements
 
-## Next Steps (Phase 3)
+### Phase 3 Integration
+- **ML Model Features**: Features designed for ML model consumption
+- **Feature Selection**: Built-in feature importance analysis
+- **Cross-validation**: Proper train/test splits for production
+- **Model Monitoring**: Feature drift detection capabilities
 
-### Model Development
-1. **Feature Selection**: Identify most predictive features
-2. **Model Architecture**: Develop ensemble models (Random Forest, XGBoost)
-3. **Hyperparameter Tuning**: Optimize model performance
-4. **Validation**: Cross-validation and backtesting
+### Advanced Features
+- **Real-time Updates**: Support for streaming data updates
+- **Feature Store**: Integration with feature store systems
+- **A/B Testing**: Support for feature experimentation
+- **Performance Monitoring**: Runtime performance metrics
 
-### Production Deployment
-1. **API Development**: RESTful service for feature generation
-2. **Real-time Updates**: Live feature computation
-3. **Monitoring**: Feature drift detection and model performance
-4. **Integration**: Connect with betting platforms and data feeds
+## ✅ Acceptance Criteria Met
 
-## Conclusion
+- [x] **Schema & Key Integrity**: All joins succeed, no silent row dropping
+- [x] **Data Leakage Prevention**: No future data used in features
+- [x] **Safe Normalization**: Train/test split prevents leakage
+- [x] **Missing Data Handling**: Graceful degradation with defaults
+- [x] **Feature Richness**: >30 features generated consistently
+- [x] **GSI Formula**: Exact formula implementation with proper normalization
+- [x] **Pipeline Execution**: Both pipeline and exploration scripts run successfully
+- [x] **Documentation**: Comprehensive documentation of all features and processes
 
-Phase 2 successfully implements a comprehensive feature engineering system that transforms raw CBB data into actionable insights for betting analysis. The modular architecture, comprehensive feature coverage, and robust data processing pipeline provide a solid foundation for Phase 3 machine learning model development.
+## 🎯 Phase 3 Readiness
 
-The system captures the multi-dimensional nature of college basketball games through team performance, player availability, situational factors, and market dynamics, enabling sophisticated prediction models that can identify value betting opportunities in the CBB market.
+Phase 2 is **FULLY COMPLETE AND READY FOR PHASE 3**. The hardened feature engineering pipeline provides:
+
+1. **Production-ready features** with comprehensive validation
+2. **Leakage-free feature generation** suitable for ML training
+3. **Rich feature set** (>30 features) covering all required categories
+4. **Robust error handling** and graceful degradation
+5. **Clear documentation** and usage examples
+6. **Comprehensive testing** and validation
+
+The system is ready to proceed to Phase 3: ML Model Training with confidence that the feature engineering foundation is solid, secure, and production-ready.

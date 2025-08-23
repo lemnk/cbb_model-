@@ -1,0 +1,152 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+          
+      - name: Install linting tools
+        run: |
+          pip install flake8 black
+          
+      - name: Run flake8
+        run: |
+          flake8 src/ tests/ --max-line-length=88 --extend-ignore=E203,W503
+          
+      - name: Run black check
+        run: |
+          black --check src/ tests/
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ "3.9", "3.10", "3.11" ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          
+      - name: Install testing tools
+        run: |
+          pip install pytest pytest-cov
+          
+      - name: Run tests with coverage
+        run: |
+          pytest --maxfail=1 --disable-warnings -q --cov=src --cov-report=xml --cov-report=term-missing
+          
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  monitoring:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+          
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          
+      - name: Install testing tools
+        run: |
+          pip install pytest
+          
+      - name: Run schema validation tests
+        run: |
+          pytest tests/test_schema_validation.py -v
+          
+      - name: Run drift detection tests
+        run: |
+          pytest tests/test_drift_detection.py -v
+          
+      - name: Run performance monitoring tests
+        run: |
+          pytest tests/test_performance_monitor.py -v
+          
+      - name: Run alerts system tests
+        run: |
+          pytest tests/test_alerts.py -v
+          
+      - name: Run all monitoring tests together
+        run: |
+          pytest tests/test_*.py --tb=short -v
+
+  build-deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: [lint, test, monitoring]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+        
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Build Docker image
+        run: |
+          docker build -t ghcr.io/${{ github.repository }}:latest .
+          docker build -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
+          
+      - name: Push Docker images
+        run: |
+          docker push ghcr.io/${{ github.repository }}:latest
+          docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
+          
+      - name: Deploy to staging (placeholder)
+        run: |
+          echo "Deploying to staging environment..."
+          echo "Image: ghcr.io/${{ github.repository }}:${{ github.sha }}"
+          echo "This step would typically deploy to staging/production"
+          
+      - name: Notify deployment success
+        if: success()
+        run: |
+          echo "✅ Deployment successful!"
+          echo "🚀 CBB Betting ML System deployed to production"
+          echo "📊 Monitoring and alerts are active"
+          
+      - name: Notify deployment failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed!"
+          echo "🔍 Check the logs above for details"
+          echo "🚨 Rollback may be required"

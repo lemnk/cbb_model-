@@ -1,11 +1,12 @@
 """
 Monitoring package for Phase 5: Monitoring & CI/CD.
-Contains schema validation, drift detection, and performance monitoring.
+Contains schema validation, drift detection, performance monitoring, and alerts.
 """
 
 from .schema_validation import SchemaValidator, GameRecord
 from .drift_detection import DriftDetector, DriftResult
 from .performance_monitor import PerformanceMonitor, MetricResult
+from .alerts import AlertManager
 
 __all__ = [
     'SchemaValidator',
@@ -13,5 +14,6 @@ __all__ = [
     'DriftDetector',
     'DriftResult',
     'PerformanceMonitor',
-    'MetricResult'
+    'MetricResult',
+    'AlertManager'
 ]

@@ -1,0 +1,27 @@
+# Alerts Configuration for Phase 5: Monitoring & CI/CD
+# CBB Betting ML System
+
+alerts:
+  mode: "console"   # options: console, file, slack
+  slack_webhook: "https://hooks.slack.com/services/XXXX/XXXX/XXXX"
+  file_path: "logs/alerts.log"
+  
+  # Alert formatting options
+  format:
+    include_timestamp: true
+    include_severity: true
+    include_values: true
+  
+  # Alert filtering
+  filter:
+    # Only send alerts for these severities
+    severities: ["ALERT", "WARNING"]
+    # Minimum number of alerts before sending
+    min_alerts: 1
+  
+  # Rate limiting (optional)
+  rate_limit:
+    # Maximum alerts per hour
+    max_per_hour: 100
+    # Cooldown period in minutes
+    cooldown_minutes: 5

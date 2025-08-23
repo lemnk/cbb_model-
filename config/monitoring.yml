@@ -1,0 +1,29 @@
+# Monitoring Configuration for Phase 5: Performance Monitoring
+# CBB Betting ML System
+
+thresholds:
+  accuracy: 0.55
+  log_loss: 0.7
+  brier_score: 0.25
+  precision: 0.5
+  recall: 0.5
+  f1: 0.5
+  roc_auc: 0.6
+  expected_value: 0.0
+
+# Alert Configuration
+alerts:
+  # Alert levels for different metric violations
+  warning_threshold: 0.8  # 80% of threshold
+  critical_threshold: 0.5  # 50% of threshold
+  
+# Performance Monitoring Settings
+performance:
+  # Minimum sample size for reliable metrics
+  min_samples: 100
+  
+  # Rolling window for performance tracking
+  rolling_window: 1000
+  
+  # Update frequency (in predictions)
+  update_frequency: 100
